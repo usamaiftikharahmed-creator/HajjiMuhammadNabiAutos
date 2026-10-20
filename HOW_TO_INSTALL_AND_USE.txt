@@ -1,0 +1,58 @@
+================================================================================
+  HAJJI MOHAMMAD NABI AUTOS - INSTALLMENT & ROZNAMCHA SOFTWARE
+================================================================================
+
+Assalam-o-Alaikum,
+
+Is software ko kisi bhi Windows computer / laptop par chalane ka asaan tareeqa:
+
+--------------------------------------------------------------------------------
+1. KISI BHI DOOSRE COMPUTER PAR COPY KARNE KA TAREEQA:
+--------------------------------------------------------------------------------
+Aapke Desktop par "Hajji Mohammad Nabi Autos (Ready to Run)" ka folder 
+aur "Hajji_Mohammad_Nabi_Autos_Portable.zip" file mojood hai.
+
+- Yeh pura folder ya ZIP file USB mai copy karein aur doosre computer par paste kar lein.
+- Agar ZIP file hai to us par Right-Click kar ke "Extract All" (Unzip) kar lein.
+- Doosre computer par Node.js, NPM, ya kisi bhi cheez ko install karne ki koi zaroorat nahi hai!
+
+--------------------------------------------------------------------------------
+2. SYSTEM CHALANE KA TAREEQA (JUST 1 CLICK):
+--------------------------------------------------------------------------------
+Folder khol kar kisi bhi ek file par Double Click karein:
+
+👉 Option A (Recommended): "Hajji_Mohammad_Nabi_Autos.exe"
+   (Yeh seedha shop ke icon ke sath desktop app window open karega bina kisi black screen ke!)
+
+👉 Option B: "RUN_SYSTEM.bat" (ya "Start_Shop_Manager.bat" / "run-app.bat")
+   (Yeh background server start kar ke system open kar dega)
+
+👉 Option C: "INSTALL_SYSTEM.bat"
+   (Yeh pehli baar chalane par aapke Windows Desktop par direct Shortcut icon bana dega!)
+
+--------------------------------------------------------------------------------
+3. CSS / DESIGN ISSUE KA MUTLAQ HAL:
+--------------------------------------------------------------------------------
+Ab tamaam CSS, styling aur JavaScript pre-compiled production format mai "dist" 
+folder ke andar bundle kar di gayi hai aur server direct text/css headers ke sath
+serve kar raha hai. Ab kisi bhi computer par CSS gayab nahi hogi!
+
+--------------------------------------------------------------------------------
+4. SOFTWARE BAND KARNE KA TAREEQA (SHUTDOWN):
+--------------------------------------------------------------------------------
+- Agar background server ko mukammal band karna ho to folder mai mojood:
+      👉 "Stop_Shop_Manager.bat"
+   par double click karein.
+
+--------------------------------------------------------------------------------
+5. LOGIN DETAILS:
+--------------------------------------------------------------------------------
+1. Admin (Owner):
+   - Username: admin
+   - Password: admin123
+
+2. Staff:
+   - Username: yonus
+   - Password: (Aapka set kiya hua staff password)
+
+================================================================================

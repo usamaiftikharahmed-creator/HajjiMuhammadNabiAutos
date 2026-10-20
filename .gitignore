@@ -1,0 +1,40 @@
+# Dependencies
+node_modules/
+*/node_modules/
+
+# Environment Variables & Secrets (CRITICAL: Never leak your DB password)
+.env
+.env.local
+.env.*.local
+*.env
+
+# Large Binaries & Bundled Node
+*.exe
+node.exe
+backend/node.exe
+*.zip
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+server.log
+
+# Build Output
+dist/
+build/
+*/dist/
+
+# OS & Editor Files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+.gemini/
+scratch/
+
+# Local backups & uploads (Private shop data)
+uploads/
+backend/uploads/
+Haji Muhammad Nabi Autos/backup/
+Haji Muhammad Nabi Autos/data/

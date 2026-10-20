@@ -1,0 +1,760 @@
+import Customer from '../models/Customer.js';
+import InstallmentSale from '../models/InstallmentSale.js';
+import Payment from '../models/Payment.js';
+import User from '../models/User.js';
+import jwt from 'jsonwebtoken';
+import { logActivity } from '../utils/logger.js';
+import { invalidateDashboardCache } from '../routes/dashboardRoutes.js';
+import { triggerDebouncedLiveJsonSync } from '../services/backupService.js';
+
+// Process-wide Singleton RAM cache for sub-millisecond page loads (<1ms)
+const SALES_CACHE_TTL_MS = 60000; // 60 seconds TTL
+
+export const invalidateSalesCache = () => {
+  global.iss_cachedSales = null;
+  global.iss_lastSalesFetchTime = 0;
+  invalidateDashboardCache();
+  triggerDebouncedLiveJsonSync();
+  // Prewarm in background so next request is instant
+  setTimeout(() => {
+    prewarmSalesCache().catch(() => {});
+  }, 10);
+};
+
+// 1. Add New Customer & Create Installment Sale
+export const createInstallmentSale = async (req, res) => {
+  try {
+    const customerName = (req.body.customerName || req.body.name || '').trim();
+    const phone = (req.body.phone1 || req.body.phone || '').trim();
+    const phone2 = (req.body.phone2 || '').trim();
+    const cnic = (req.body.cnic || '').trim();
+    const address = (req.body.permanentAddress || req.body.address || '').trim();
+    
+    const guarantor1Name = (req.body.guarantor1Name || req.body.guarantorName || '').trim();
+    const guarantor1Phone = (req.body.guarantor1Phone || req.body.guarantorPhone || '').trim();
+    const guarantor2Name = (req.body.guarantor2Name || '').trim();
+    const guarantor2Phone = (req.body.guarantor2Phone || '').trim();
+
+    const itemName = (req.body.itemName || '').trim();
+    const registrationNumber = (req.body.registrationNumber || req.body.itemRegNumber || '').trim();
+    const itemRegNumber = registrationNumber;
+    const engineNumber = (req.body.engineNumber || '').trim();
+    const chassisNumber = (req.body.chassisNumber || '').trim();
+    const totalAmount = Number(req.body.totalAmount);
+    const advancePayment = Number(req.body.advancePayment) || 0;
+    const monthlyAmount = Number(req.body.monthlyKist || req.body.monthlyAmount);
+    const dueDateDay = Number(req.body.dueDateDay) || 5;
+    const paymentMethod = req.body.paymentMode || req.body.paymentMethod || 'Cash';
+
+    const total = totalAmount;
+    const remainingBalance = Math.max(0, total - advancePayment);
+    const totalMonths = Number(req.body.totalMonths) || (monthlyAmount > 0 ? Math.ceil(remainingBalance / monthlyAmount) : 1);
+    const promiseMonth = (req.body.promiseMonth || '').trim();
+    const promisedMonths = req.body.promisedMonths ? Number(req.body.promisedMonths) : null;
+
+    if (!customerName || !phone || !itemName || !totalAmount || !monthlyAmount) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Please fill all required fields: Customer Name, Phone, Item Name, Total Amount, and Monthly Installment.' 
+      });
+    }
+
+    // Process uploaded files if any
+    let profilePic = '';
+    let cnicFront = '';
+    let cnicBack = '';
+    let guarantor1CnicFront = '';
+    let guarantor1CnicBack = '';
+    let guarantor2CnicFront = '';
+    let guarantor2CnicBack = '';
+    const documents = [];
+
+    if (req.files && Array.isArray(req.files)) {
+      req.files.forEach((file) => {
+        const fileUrl = `/uploads/${file.filename}`;
+        if (file.fieldname === 'profilePic' || file.fieldname === 'customerPhoto' || file.fieldname === 'photo') {
+          profilePic = fileUrl;
+        }
+        else if (file.fieldname === 'cnicFront') cnicFront = fileUrl;
+        else if (file.fieldname === 'cnicBack') cnicBack = fileUrl;
+        else if (file.fieldname === 'guarantor1CnicFront') guarantor1CnicFront = fileUrl;
+        else if (file.fieldname === 'guarantor1CnicBack') guarantor1CnicBack = fileUrl;
+        else if (file.fieldname === 'guarantor2CnicFront') guarantor2CnicFront = fileUrl;
+        else if (file.fieldname === 'guarantor2CnicBack') guarantor2CnicBack = fileUrl;
+        else {
+          let title = file.originalname || 'Document';
+          const match = file.fieldname.match(/doc(?:Title_(\d+)|uments\[(\d+)\])/i);
+          if (match) {
+            const idx = match[1] || match[2];
+            if (idx !== undefined) {
+              title = req.body[`docTitle_${idx}`] || req.body[`documents[${idx}][title]`] || title;
+            }
+          }
+          documents.push({ title, fileUrl });
+        }
+      });
+    }
+
+    // Find or create customer
+    let customer = await Customer.findOne({ 
+      $or: [
+        { phone },
+        ...(cnic ? [{ cnic }] : [])
+      ]
+    });
+
+    if (!customer) {
+      const customerCount = await Customer.countDocuments();
+      const customerId = `CUST-${1001 + customerCount}`;
+
+      customer = await Customer.create({
+        customerId,
+        name: customerName,
+        phone,
+        phone2,
+        cnic,
+        address,
+        profilePic,
+        guarantorName: guarantor1Name,
+        guarantorPhone: guarantor1Phone,
+        guarantor2Name,
+        guarantor2Phone
+      });
+    } else {
+      customer = await Customer.findByIdAndUpdate(
+        customer._id,
+        {
+          $set: {
+            name: customerName || customer.name,
+            phone2: phone2 || customer.phone2,
+            cnic: cnic || customer.cnic,
+            address: address || customer.address,
+            ...(profilePic ? { profilePic } : {}),
+            guarantorName: guarantor1Name || customer.guarantorName,
+            guarantorPhone: guarantor1Phone || customer.guarantorPhone,
+            guarantor2Name: guarantor2Name || customer.guarantor2Name,
+            guarantor2Phone: guarantor2Phone || customer.guarantor2Phone
+          }
+        },
+        { new: true }
+      );
+    }
+
+    // Calculate initial nextDueDate (Next month on dueDateDay)
+    const nextDue = new Date();
+    nextDue.setMonth(nextDue.getMonth() + 1);
+    nextDue.setDate(dueDateDay);
+
+    const installmentSale = await InstallmentSale.create({
+      customer: customer._id,
+      itemName,
+      itemRegNumber,
+      registrationNumber,
+      engineNumber,
+      chassisNumber,
+      totalAmount: total,
+      advancePayment,
+      remainingBalance,
+      monthlyAmount,
+      totalMonths,
+      promiseMonth,
+      promisedMonths,
+      dueDateDay,
+      profilePic: profilePic || customer.profilePic || '',
+      cnicFront,
+      cnicBack,
+      guarantorName: guarantor1Name || customer.guarantorName || '',
+      guarantorPhone: guarantor1Phone || customer.guarantorPhone || '',
+      guarantor1CnicFront,
+      guarantor1CnicBack,
+      guarantor2Name,
+      guarantor2Phone,
+      guarantor2CnicFront,
+      guarantor2CnicBack,
+      documents,
+      nextDueDate: nextDue,
+      lastPaymentDate: advancePayment > 0 ? new Date() : null,
+      status: remainingBalance === 0 ? 'completed' : 'active',
+      createdBy: req.user?._id || null
+    });
+
+    let advancePaymentRecord = null;
+    if (advancePayment > 0) {
+      advancePaymentRecord = await Payment.create({
+        installmentSale: installmentSale._id,
+        customer: customer._id,
+        amountPaid: advancePayment,
+        paymentMethod,
+        forMonth: 'Advance Payment',
+        receivedBy: req.user?._id || null,
+        notes: 'Advance Payment at Booking'
+      });
+    }
+
+    await logActivity({
+      req,
+      action: 'CREATE_SALE',
+      module: 'Installments',
+      details: `Naya Installment Khata: "${customer.name}" (${customer.phone}), Item: "${itemName}", Total: Rs. ${total.toLocaleString()}, Advance: Rs. ${advancePayment.toLocaleString()}`,
+      targetId: installmentSale._id,
+      targetName: customer.name,
+      metadata: { itemName, total, advancePayment, paymentMethod }
+    });
+
+    invalidateSalesCache();
+
+    res.status(201).json({
+      success: true,
+      message: 'Installment sale account created successfully',
+      customerId: customer.customerId,
+      customer,
+      installmentSale,
+      payment: advancePaymentRecord
+    });
+  } catch (error) {
+    console.error('Create Sale Error:', error.message);
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// 2. Receive Monthly Installment Payment
+export const recordPayment = async (req, res) => {
+  try {
+    const saleId = req.body.installmentSaleId || req.body.saleId;
+    const rawAmount = req.body.amountPaid ?? req.body.amount;
+    const paymentMethod = req.body.paymentMethod || req.body.paymentMode || 'Cash';
+    const transactionId = req.body.transactionId || '';
+    const forMonth = req.body.forMonth || new Date().toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+    const notes = req.body.notes || '';
+
+    if (!saleId || rawAmount === undefined || rawAmount === null) {
+      return res.status(400).json({ success: false, message: 'Sale ID and amount are required' });
+    }
+
+    const sale = await InstallmentSale.findById(saleId).populate('customer');
+    if (!sale) {
+      return res.status(404).json({ success: false, message: 'Installment account not found' });
+    }
+
+    const paid = Number(rawAmount);
+    if (isNaN(paid) || paid <= 0) {
+      return res.status(400).json({ success: false, message: 'Please enter a valid positive payment amount' });
+    }
+
+    if (paid > sale.remainingBalance) {
+      return res.status(400).json({ 
+        success: false, 
+        message: `Amount (Rs. ${paid.toLocaleString()}) exceeds remaining balance of Rs. ${sale.remainingBalance.toLocaleString()}` 
+      });
+    }
+
+    const payment = await Payment.create({
+      installmentSale: sale._id,
+      customer: sale.customer?._id || sale.customer,
+      amountPaid: paid,
+      paymentMethod,
+      transactionId,
+      forMonth,
+      notes,
+      receivedBy: req.user?._id || null
+    });
+
+    // Update remaining balance & completion status
+    sale.remainingBalance = Math.max(0, sale.remainingBalance - paid);
+    if (sale.remainingBalance === 0) {
+      sale.status = 'completed';
+    }
+    sale.lastPaymentDate = new Date();
+
+    // Schedule next due date properly based on how many full monthly installments are cleared
+    const totalFinanced = Math.max(0, (sale.totalAmount || 0) - (sale.advancePayment || 0));
+    const totalPaidInstallments = Math.max(0, totalFinanced - sale.remainingBalance);
+    const fullKistsPaid = Math.floor(totalPaidInstallments / (sale.monthlyAmount || 1));
+
+    if (sale.remainingBalance === 0) {
+      sale.nextDueDate = null;
+    } else {
+      const saleDate = sale.createdAt ? new Date(sale.createdAt) : new Date();
+      const nextDue = new Date(saleDate.getFullYear(), saleDate.getMonth() + 1 + fullKistsPaid, sale.dueDateDay || 5);
+      sale.nextDueDate = nextDue;
+    }
+
+    await sale.save();
+
+    await logActivity({
+      req,
+      action: 'RECORD_PAYMENT',
+      module: 'Payments',
+      details: `Kist Wasooli: Rs. ${paid.toLocaleString()} wasool huay for "${sale.customer?.name}" (Item: "${sale.itemName}"). [Payment Mode: ${paymentMethod}, Baqi Kist: Rs. ${sale.remainingBalance.toLocaleString()}]`,
+      targetId: payment._id,
+      targetName: sale.customer?.name,
+      metadata: { itemName: sale.itemName, paid, paymentMethod, remainingBalance: sale.remainingBalance }
+    });
+
+    invalidateSalesCache();
+
+    res.status(201).json({
+      success: true,
+      message: 'Payment recorded successfully',
+      remainingBalance: sale.remainingBalance,
+      payment,
+      sale
+    });
+  } catch (error) {
+    console.error('Record Payment Error:', error.message);
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// Reusable DB aggregation pipeline
+export const fetchSalesFromDB = async () => {
+  return await InstallmentSale.aggregate([
+    { $sort: { createdAt: -1 } },
+    {
+      $lookup: {
+        from: 'customers',
+        localField: 'customer',
+        foreignField: '_id',
+        as: 'customer'
+      }
+    },
+    { $unwind: { path: '$customer', preserveNullAndEmptyArrays: true } },
+    {
+      $lookup: {
+        from: 'users',
+        localField: 'createdBy',
+        foreignField: '_id',
+        as: 'createdBy'
+      }
+    },
+    { $unwind: { path: '$createdBy', preserveNullAndEmptyArrays: true } },
+    {
+      $lookup: {
+        from: 'payments',
+        localField: '_id',
+        foreignField: 'installmentSale',
+        pipeline: [
+          { $sort: { createdAt: -1 } },
+          {
+            $project: {
+              installmentSale: 1,
+              customer: 1,
+              amountPaid: 1,
+              paymentMethod: 1,
+              forMonth: 1,
+              transactionId: 1,
+              notes: 1,
+              createdAt: 1
+            }
+          }
+        ],
+        as: 'payments'
+      }
+    }
+  ]);
+};
+
+// Prewarm sales cache into Node RAM on startup
+export const prewarmSalesCache = async () => {
+  try {
+    const sales = await fetchSalesFromDB();
+    global.iss_cachedSales = sales;
+    global.iss_lastSalesFetchTime = Date.now();
+    console.log(`⚡ In-memory sales cache prewarmed with ${sales.length} records!`);
+  } catch (err) {
+    console.log('Prewarm error:', err.message);
+  }
+};
+
+// 3. Get All Accounts (Ultra-fast cached aggregation)
+export const getInstallmentSales = async (req, res) => {
+  try {
+    const now = Date.now();
+    if (global.iss_cachedSales && (now - (global.iss_lastSalesFetchTime || 0)) < SALES_CACHE_TTL_MS) {
+      return res.json({ success: true, sales: global.iss_cachedSales, fromCache: true });
+    }
+
+    const sales = await fetchSalesFromDB();
+
+    global.iss_cachedSales = sales;
+    global.iss_lastSalesFetchTime = now;
+
+    res.json({ success: true, sales });
+  } catch (error) {
+    console.error('Get Sales Error:', error.message);
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// 4. Get Customer Full Ledger with Multi-field Search
+export const getCustomerLedger = async (req, res) => {
+  try {
+    const rawIdentifier = (req.params.identifier || '').trim();
+    if (!rawIdentifier) {
+      return res.status(400).json({ success: false, message: 'Please provide a search query' });
+    }
+
+    // Cleaned query: handle ID numbers like '1001' or 'CUST-1001'
+    let custIdPattern = rawIdentifier.toUpperCase();
+    if (/^\d{1,5}$/.test(rawIdentifier)) {
+      custIdPattern = `CUST-${rawIdentifier}`;
+    }
+
+    const cleanDigits = rawIdentifier.replace(/\D/g, '');
+
+    // Search conditions for customer
+    const customerQuery = {
+      $or: [
+        { customerId: custIdPattern },
+        { customerId: rawIdentifier.toUpperCase() },
+        { phone: rawIdentifier },
+        { phone2: rawIdentifier },
+        ...(cleanDigits.length >= 10 ? [{ phone: { $regex: cleanDigits.slice(-10), $options: 'i' } }] : []),
+        ...(rawIdentifier.includes('-') || cleanDigits.length === 13 
+            ? [{ cnic: { $regex: cleanDigits, $options: 'i' } }, { cnic: rawIdentifier }] 
+            : []),
+        { name: { $regex: rawIdentifier, $options: 'i' } }
+      ]
+    };
+
+    let customer = await Customer.findOne(customerQuery).lean();
+
+    // If customer not found directly, check if identifier matches an itemRegNumber or itemName
+    if (!customer) {
+      const matchedSale = await InstallmentSale.findOne({
+        $or: [
+          { itemRegNumber: { $regex: `^${rawIdentifier}$`, $options: 'i' } },
+          { registrationNumber: { $regex: `^${rawIdentifier}$`, $options: 'i' } },
+          { engineNumber: { $regex: `^${rawIdentifier}$`, $options: 'i' } },
+          { chassisNumber: { $regex: `^${rawIdentifier}$`, $options: 'i' } },
+          { itemName: { $regex: rawIdentifier, $options: 'i' } }
+        ]
+      }).populate('customer').lean();
+
+      if (matchedSale && matchedSale.customer) {
+        customer = matchedSale.customer;
+      }
+    }
+
+    if (!customer) {
+      return res.status(404).json({ 
+        success: false, 
+        message: 'No customer, CNIC, Phone, or Registration Number record found.' 
+      });
+    }
+
+    const [installmentSales, payments] = await Promise.all([
+      InstallmentSale.find({ customer: customer._id }).sort({ createdAt: -1 }).lean(),
+      Payment.find({ customer: customer._id })
+        .populate('receivedBy', 'name')
+        .populate('installmentSale', 'itemName itemRegNumber registrationNumber engineNumber chassisNumber totalAmount remainingBalance monthlyAmount')
+        .sort({ createdAt: -1 })
+        .lean()
+    ]);
+
+    res.json({
+      success: true,
+      customer,
+      installmentSales,
+      payments
+    });
+  } catch (error) {
+    console.error('Get Ledger Error:', error.message);
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// 5. Update Customer Profile Information
+export const updateCustomer = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { 
+      name, phone, phone2, cnic, address, 
+      guarantorName, guarantorPhone, guarantor2Name, guarantor2Phone 
+    } = req.body;
+
+    let profilePic = req.body.profilePic;
+    if (req.files && Array.isArray(req.files)) {
+      const picFile = req.files.find(f => f.fieldname === 'profilePic' || f.fieldname === 'photo' || f.fieldname === 'customerPhoto');
+      if (picFile) {
+        profilePic = `/uploads/${picFile.filename}`;
+      }
+    } else if (req.file) {
+      profilePic = `/uploads/${req.file.filename}`;
+    }
+
+    const updatedCustomer = await Customer.findByIdAndUpdate(
+      id,
+      {
+        $set: {
+          ...(name && { name: name.trim() }),
+          ...(phone && { phone: phone.trim() }),
+          ...(phone2 !== undefined && { phone2: phone2.trim() }),
+          ...(cnic !== undefined && { cnic: cnic.trim() }),
+          ...(address !== undefined && { address: address.trim() }),
+          ...(profilePic !== undefined && { profilePic }),
+          ...(guarantorName !== undefined && { guarantorName: guarantorName.trim() }),
+          ...(guarantorPhone !== undefined && { guarantorPhone: guarantorPhone.trim() }),
+          ...(guarantor2Name !== undefined && { guarantor2Name: guarantor2Name.trim() }),
+          ...(guarantor2Phone !== undefined && { guarantor2Phone: guarantor2Phone.trim() })
+        }
+      },
+      { new: true, runValidators: true }
+    );
+
+    if (!updatedCustomer) {
+      return res.status(404).json({ success: false, message: 'Customer not found' });
+    }
+
+    if (profilePic) {
+      await InstallmentSale.updateMany({ customer: id }, { $set: { profilePic } });
+    }
+
+    invalidateSalesCache();
+
+    res.json({
+      success: true,
+      message: 'Customer profile updated successfully',
+      customer: updatedCustomer
+    });
+  } catch (error) {
+    console.error('Update Customer Error:', error.message);
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// 5a. Direct Upload / Update Customer Profile Photo
+export const uploadCustomerPhoto = async (req, res) => {
+  try {
+    const { id } = req.params;
+    let profilePic = '';
+    if (req.files && Array.isArray(req.files) && req.files.length > 0) {
+      profilePic = `/uploads/${req.files[0].filename}`;
+    } else if (req.file) {
+      profilePic = `/uploads/${req.file.filename}`;
+    }
+
+    if (!profilePic) {
+      return res.status(400).json({ success: false, message: 'No photo uploaded' });
+    }
+
+    const updatedCustomer = await Customer.findByIdAndUpdate(
+      id,
+      { $set: { profilePic } },
+      { new: true }
+    );
+
+    if (!updatedCustomer) {
+      return res.status(404).json({ success: false, message: 'Customer not found' });
+    }
+
+    await InstallmentSale.updateMany({ customer: id }, { $set: { profilePic } });
+    invalidateSalesCache();
+
+    res.json({
+      success: true,
+      message: 'Customer profile picture updated successfully',
+      profilePic,
+      customer: updatedCustomer
+    });
+  } catch (error) {
+    console.error('Upload Customer Photo Error:', error.message);
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// 5b. Update Installment Sale Details (Strictly locks itemName, totalAmount, advancePayment)
+export const updateSaleDetails = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { 
+      itemRegNumber, registrationNumber, engineNumber, chassisNumber, monthlyAmount, dueDateDay, totalMonths, promiseMonth, promisedMonths,
+      status, remarks, guarantorName, guarantorPhone, guarantor2Name, guarantor2Phone 
+    } = req.body;
+
+    const sale = await InstallmentSale.findById(id);
+    if (!sale) {
+      return res.status(404).json({ success: false, message: 'Installment sale not found' });
+    }
+
+    // Editable fields
+    const updatedReg = registrationNumber !== undefined ? registrationNumber.trim() : (itemRegNumber !== undefined ? itemRegNumber.trim() : undefined);
+    if (updatedReg !== undefined) {
+      sale.itemRegNumber = updatedReg;
+      sale.registrationNumber = updatedReg;
+    }
+    if (engineNumber !== undefined) sale.engineNumber = engineNumber.trim();
+    if (chassisNumber !== undefined) sale.chassisNumber = chassisNumber.trim();
+    if (monthlyAmount !== undefined && Number(monthlyAmount) > 0) sale.monthlyAmount = Number(monthlyAmount);
+    if (dueDateDay !== undefined && Number(dueDateDay) >= 1 && Number(dueDateDay) <= 31) sale.dueDateDay = Number(dueDateDay);
+    if (totalMonths !== undefined && Number(totalMonths) > 0) sale.totalMonths = Number(totalMonths);
+    if (promiseMonth !== undefined) sale.promiseMonth = promiseMonth.trim();
+    if (promisedMonths !== undefined) sale.promisedMonths = promisedMonths ? Number(promisedMonths) : null;
+    if (status && ['active', 'completed'].includes(status)) sale.status = status;
+    if (remarks !== undefined) sale.remarks = remarks.trim();
+
+    if (guarantorName !== undefined) sale.guarantorName = guarantorName.trim();
+    if (guarantorPhone !== undefined) sale.guarantorPhone = guarantorPhone.trim();
+    if (guarantor2Name !== undefined) sale.guarantor2Name = guarantor2Name.trim();
+    if (guarantor2Phone !== undefined) sale.guarantor2Phone = guarantor2Phone.trim();
+
+    await sale.save();
+
+    invalidateSalesCache();
+
+    res.json({
+      success: true,
+      message: 'Installment sale details updated successfully',
+      sale
+    });
+  } catch (error) {
+    console.error('Update Sale Error:', error.message);
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// 6. Upload Extra Documents to an Existing Installment Sale
+export const uploadSaleDocuments = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const sale = await InstallmentSale.findById(id);
+    if (!sale) {
+      return res.status(404).json({ success: false, message: 'Installment account not found' });
+    }
+
+    if (!req.files || req.files.length === 0) {
+      return res.status(400).json({ success: false, message: 'No file uploaded' });
+    }
+
+    const newDocuments = req.files.map((file, idx) => {
+      const fileUrl = `/uploads/${file.filename}`;
+      const title = req.body[`docTitle_${idx}`] || req.body.title || file.originalname || 'Document';
+      return { title, fileUrl };
+    });
+
+    sale.documents.push(...newDocuments);
+    await sale.save();
+
+    invalidateSalesCache();
+
+    res.json({
+      success: true,
+      message: 'Document(s) uploaded successfully',
+      documents: sale.documents
+    });
+  } catch (error) {
+    console.error('Upload Documents Error:', error.message);
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// 6b. Delete a Document from an Existing Sale
+export const deleteSaleDocument = async (req, res) => {
+  try {
+    const { id, docId } = req.params;
+    const sale = await InstallmentSale.findById(id);
+    if (!sale) {
+      return res.status(404).json({ success: false, message: 'Installment account not found' });
+    }
+
+    sale.documents = sale.documents.filter(doc => doc._id.toString() !== docId);
+    await sale.save();
+
+    invalidateSalesCache();
+
+    res.json({
+      success: true,
+      message: 'Document removed successfully',
+      documents: sale.documents
+    });
+  } catch (error) {
+    console.error('Delete Document Error:', error.message);
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// 7. Update Promise Date & Call Remarks (Supports Multi-Followup History)
+export const updatePromiseDate = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { followUpDate, promiseDate, remarks, addedByName, callStatus } = req.body;
+
+    if (!promiseDate && !remarks) {
+      return res.status(400).json({ success: false, message: 'Promise Date or Remarks is required' });
+    }
+
+    const sale = await InstallmentSale.findById(id);
+    if (!sale) {
+      return res.status(404).json({ success: false, message: 'Installment sale not found' });
+    }
+
+    // Try to resolve author name
+    let authorName = addedByName || 'Admin';
+    let authorId = null;
+    if (req.user) {
+      authorName = req.user.name || authorName;
+      authorId = req.user._id;
+    } else {
+      // Decode JWT if passed in header/cookie
+      const authHeader = req.headers.authorization;
+      const token = (authHeader && authHeader.startsWith('Bearer ')) ? authHeader.split(' ')[1] : req.cookies?.jwt;
+      if (token && process.env.JWT_SECRET) {
+        try {
+          const decoded = jwt.verify(token, process.env.JWT_SECRET);
+          const foundUser = await User.findById(decoded.id).select('name');
+          if (foundUser) {
+            authorName = foundUser.name;
+            authorId = foundUser._id;
+          }
+        } catch (e) {
+          // Token decode optional
+        }
+      }
+    }
+
+    const pDate = promiseDate ? new Date(promiseDate) : null;
+    const fDate = followUpDate ? new Date(followUpDate) : new Date();
+    const resolvedCallStatus = callStatus || (pDate ? 'CALLED - PAYMENT PROMISED' : 'PENDING CALL');
+
+    const newFollowUp = {
+      callStatus: resolvedCallStatus,
+      followUpDate: fDate,
+      promiseDate: pDate,
+      remarks: (remarks || '').trim(),
+      addedBy: authorId,
+      addedByName: authorName,
+      createdAt: new Date()
+    };
+
+    if (!sale.followUps) {
+      sale.followUps = [];
+    }
+    sale.followUps.push(newFollowUp);
+    sale.callStatus = resolvedCallStatus;
+    sale.promiseDate = pDate;
+    sale.remarks = (remarks || '').trim() || sale.remarks;
+
+    await sale.save();
+    await sale.populate('customer');
+
+    await logActivity({
+      req,
+      action: 'UPDATE_PROMISE_DATE',
+      module: 'Installments',
+      details: `Follow-up remarks & promise date darj ki for "${sale.customer?.name}": "${remarks}"`,
+      targetId: sale._id,
+      targetName: sale.customer?.name
+    });
+
+    invalidateSalesCache();
+
+    res.json({
+      success: true,
+      message: 'Follow-up remarks and promise date saved successfully',
+      sale
+    });
+  } catch (error) {
+    console.error('Update Promise Date Error:', error.message);
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
