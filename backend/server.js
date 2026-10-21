@@ -22,11 +22,13 @@ process.env.JWT_SECRET = process.env.JWT_SECRET || 'super_secret_secure_key_10_o
 process.env.MONGO_URI = process.env.MONGO_URI || 'mongodb+srv://usamaiftikharahmed:Chlorobenzene@cluster0.tcuhmiw.mongodb.net/installment_shop?retryWrites=true&w=majority';
 process.env.CLIENT_URL = process.env.CLIENT_URL || 'http://localhost:5000';
 
-// Fix Windows DNS SRV lookup failures for MongoDB Atlas
-try {
-  dns.setServers(['8.8.8.8', '1.1.1.1']);
-} catch (e) {
-  // Ignore if permissions disallow custom DNS
+// Fix Windows DNS SRV lookup failures for MongoDB Atlas (Windows only)
+if (process.platform === 'win32') {
+  try {
+    dns.setServers(['8.8.8.8', '1.1.1.1']);
+  } catch (e) {
+    // Ignore if permissions disallow custom DNS
+  }
 }
 import cors from 'cors';
 import helmet from 'helmet';
@@ -110,7 +112,47 @@ app.use('/logs', logRoutes);
 app.use('/api/backup', backupRoutes);
 app.use('/backup', backupRoutes);
 
-app.get('/api/system-status', (req, res) => {
+// DB Connection Pool for Serverless & Long-running servers
+let cachedDbPromise = null;
+export const connectDB = async () => {
+  if (mongoose.connection.readyState === 1) return mongoose.connection;
+  if (!cachedDbPromise) {
+    cachedDbPromise = mongoose.connect(process.env.MONGO_URI, {
+      serverSelectionTimeoutMS: 5000,
+      connectTimeoutMS: 5000
+    }).then(async (m) => {
+      console.log('☁️ Cloud Atlas Connected! Synchronizing data with local drive...');
+      syncOfflineDataToAtlas().catch(e => console.warn('Sync notice:', e.message));
+      return m;
+    }).catch(err => {
+      cachedDbPromise = null;
+      console.warn('⚡ Operating in Offline Mode (Local JSON Database Active):', err.message);
+      throw err;
+    });
+  }
+  return cachedDbPromise;
+};
+
+// Ensure Atlas DB connection is triggered on API calls (for Serverless compatibility)
+app.use(async (req, res, next) => {
+  if (req.path.startsWith('/api') || req.path.startsWith('/auth')) {
+    if (mongoose.connection.readyState !== 1) {
+      try {
+        await connectDB();
+      } catch (e) {
+        // Fallback to offline mode seamlessly
+      }
+    }
+  }
+  next();
+});
+
+app.get('/api/system-status', async (req, res) => {
+  if (mongoose.connection.readyState !== 1) {
+    try {
+      await connectDB();
+    } catch (e) {}
+  }
   const isOnline = mongoose.connection.readyState === 1;
   res.json({
     success: true,
@@ -242,22 +284,14 @@ seedAdmin().catch(e => console.warn('Seed admin notice:', e.message));
 
 // 3. Start Express Web/Desktop Server immediately (ready in <0.2 seconds)
 const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => {
-  console.log(`🚀 Hajji Mohammad Nabi Autos Server running on port ${PORT}`);
-});
-
-// 4. Connect to MongoDB Atlas in background without blocking server or login
-mongoose.connect(process.env.MONGO_URI, {
-  serverSelectionTimeoutMS: 2500,
-  connectTimeoutMS: 2500
-})
-  .then(async () => {
-    console.log('☁️ Cloud Atlas Connected! Synchronizing data with local drive...');
-    await syncOfflineDataToAtlas();
-  })
-  .catch(err => {
-    console.log('⚡ Offline Mode Active: Running seamlessly with 100% Local JSON Database in "Haji Muhammad Nabi Autos/data/"');
+if (!process.env.VERCEL) {
+  app.listen(PORT, () => {
+    console.log(`🚀 Hajji Mohammad Nabi Autos Server running on port ${PORT}`);
   });
+}
+
+// 4. Connect to MongoDB Atlas
+connectDB().catch(() => {});
 
 // 5. Start Background Auto-Reconnect and Cloud Sync (checks every 20s)
 startBackgroundSyncMonitor(process.env.MONGO_URI);
