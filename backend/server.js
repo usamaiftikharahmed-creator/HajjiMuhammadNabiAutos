@@ -83,9 +83,31 @@ app.use(cookieParser());
 
 import { getUploadDirs } from './services/uploadService.js';
 
-// Serve uploaded files statically from all possible directories (Haji Muhammad Nabi Autos/uploads, backend/uploads, G-Drive)
+// Serve uploaded files statically from all possible directories
 getUploadDirs().forEach(dir => {
   app.use('/uploads', express.static(dir));
+});
+
+// Explicit image / document delivery with proper MIME headers for uploads without extension
+app.get('/uploads/:filename', (req, res, next) => {
+  const filename = path.basename(req.params.filename);
+  const possibleDirs = [
+    path.resolve(__dirname, 'uploads'),
+    path.resolve(__dirname, '..', 'uploads'),
+    path.resolve(process.cwd(), 'backend', 'uploads'),
+    path.resolve(process.cwd(), 'uploads'),
+    path.resolve(__dirname, '..', 'Haji Muhammad Nabi Autos', 'uploads')
+  ];
+
+  for (const dir of possibleDirs) {
+    const filePath = path.join(dir, filename);
+    if (fs.existsSync(filePath)) {
+      res.setHeader('Content-Type', 'image/jpeg');
+      res.setHeader('Cache-Control', 'public, max-age=86400');
+      return res.sendFile(filePath);
+    }
+  }
+  next();
 });
 
 // 2. RATE LIMITER (Must be before routes)

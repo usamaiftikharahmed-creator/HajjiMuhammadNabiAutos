@@ -35,6 +35,6 @@ scratch/
 
 # Local backups & uploads (Private shop data)
 uploads/
-backend/uploads/
+backend/uploads/temp_backups/
 Haji Muhammad Nabi Autos/backup/
 Haji Muhammad Nabi Autos/data/
