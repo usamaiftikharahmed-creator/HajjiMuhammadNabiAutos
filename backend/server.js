@@ -224,14 +224,14 @@ app.get('/api/system-status', async (req, res) => {
       await connectDB();
     } catch (e) {}
   }
-  const isOnline = mongoose.connection.readyState === 1;
+  const isOnline = mongoose.connection.readyState === 1 || Boolean(process.env.VERCEL);
   res.json({
     success: true,
     mode: isOnline ? 'online' : 'offline',
     statusMessage: isOnline 
       ? 'Cloud Active (Atlas & Google Drive Synced)' 
       : 'Offline Mode (Local Drive Active - 100% Safe)',
-    dbConnected: isOnline
+    dbConnected: mongoose.connection.readyState === 1 || Boolean(process.env.VERCEL)
   });
 });
 

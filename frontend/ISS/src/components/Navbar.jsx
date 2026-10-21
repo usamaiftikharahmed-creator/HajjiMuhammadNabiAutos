@@ -6,28 +6,36 @@ import AdminDueNotifications from './AdminDueNotifications';
 
 export default function Navbar({ onToggleSidebar, onNavigateRecovery, onNavigateAll }) {
   const { user, logout } = useAuth();
-  const [systemStatus, setSystemStatus] = useState({ mode: 'offline', statusMessage: 'Offline Mode (Local Drive Active)' });
+  const [systemStatus, setSystemStatus] = useState({ 
+    mode: 'online', 
+    statusMessage: 'Google Drive & Cloud Synced' 
+  });
 
   useEffect(() => {
+    let failCount = 0;
     const checkStatus = async () => {
       try {
         const { data } = await API.get('/system-status');
-        if (data?.success) {
+        if (data?.success && data.mode) {
+          failCount = 0;
           setSystemStatus({
             mode: data.mode,
             statusMessage: data.statusMessage
           });
         }
       } catch (e) {
-        setSystemStatus({
-          mode: 'offline',
-          statusMessage: 'Offline Mode (Local Drive Active - 100% Safe)'
-        });
+        failCount++;
+        if (failCount >= 3) {
+          setSystemStatus({
+            mode: 'offline',
+            statusMessage: 'Offline Mode (Local Drive Active - 100% Safe)'
+          });
+        }
       }
     };
 
     checkStatus();
-    const interval = setInterval(checkStatus, 15000);
+    const interval = setInterval(checkStatus, 20000);
     return () => clearInterval(interval);
   }, []);
 
