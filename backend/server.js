@@ -18,8 +18,8 @@ if (fs.existsSync(path.resolve(__dirname, '.env'))) {
 }
 
 // Fallback defaults to ensure 100% offline functionality without missing config crashes
-process.env.JWT_SECRET = process.env.JWT_SECRET || 'hajji_mohammad_nabi_autos_secret_key_2026_secure';
-process.env.MONGO_URI = process.env.MONGO_URI || 'mongodb+srv://usama:usama123@cluster0.p7d5k.mongodb.net/installment-system?retryWrites=true&w=majority';
+process.env.JWT_SECRET = process.env.JWT_SECRET || 'super_secret_secure_key_10_out_of_10';
+process.env.MONGO_URI = process.env.MONGO_URI || 'mongodb+srv://usamaiftikharahmed:Chlorobenzene@cluster0.tcuhmiw.mongodb.net/installment_shop?retryWrites=true&w=majority';
 process.env.CLIENT_URL = process.env.CLIENT_URL || 'http://localhost:5000';
 
 // Fix Windows DNS SRV lookup failures for MongoDB Atlas
@@ -249,3 +249,5 @@ mongoose.connect(process.env.MONGO_URI, {
 
 // 5. Start Background Auto-Reconnect and Cloud Sync (checks every 20s)
 startBackgroundSyncMonitor(process.env.MONGO_URI);
+
+export default app;
