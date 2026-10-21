@@ -2,6 +2,11 @@ import mongoose from 'mongoose';
 import { offlineDb, wrapDoc, generateId } from '../services/offlineDb.js';
 
 export const createHybridModel = (MongooseModel, colName) => {
+  // On Vercel / Cloud serverless, ALWAYS use MongooseModel directly against MongoDB Atlas
+  if (process.env.VERCEL) {
+    return MongooseModel;
+  }
+
   const offlineCol = offlineDb[colName];
 
   return new Proxy(MongooseModel, {
@@ -22,12 +27,12 @@ export const createHybridModel = (MongooseModel, colName) => {
       return wrapDoc(doc, colName);
     },
     get(target, prop) {
-      const isOnline = mongoose.connection.readyState === 1;
+      const getIsOnline = () => mongoose.connection.readyState === 1;
 
       // Intercept creation
       if (prop === 'create') {
         return async function (...args) {
-          if (isOnline) {
+          if (getIsOnline()) {
             try {
               const res = await target.create(...args);
               // Mirror write to offline DB
@@ -48,7 +53,7 @@ export const createHybridModel = (MongooseModel, colName) => {
       // Intercept find
       if (prop === 'find') {
         return function (...args) {
-          if (isOnline) {
+          if (getIsOnline()) {
             try {
               const query = target.find(...args);
               const originalExec = query.exec.bind(query);
@@ -72,7 +77,7 @@ export const createHybridModel = (MongooseModel, colName) => {
       // Intercept findOne
       if (prop === 'findOne') {
         return function (...args) {
-          if (isOnline) {
+          if (getIsOnline()) {
             try {
               const query = target.findOne(...args);
               const originalExec = query.exec.bind(query);
@@ -96,7 +101,7 @@ export const createHybridModel = (MongooseModel, colName) => {
       // Intercept findById
       if (prop === 'findById') {
         return function (...args) {
-          if (isOnline) {
+          if (getIsOnline()) {
             try {
               const query = target.findById(...args);
               const originalExec = query.exec.bind(query);
@@ -120,7 +125,7 @@ export const createHybridModel = (MongooseModel, colName) => {
       // Intercept findByIdAndUpdate
       if (prop === 'findByIdAndUpdate') {
         return async function (...args) {
-          if (isOnline) {
+          if (getIsOnline()) {
             try {
               const res = await target.findByIdAndUpdate(...args);
               offlineCol.findByIdAndUpdate(...args).catch(() => {});
@@ -137,7 +142,7 @@ export const createHybridModel = (MongooseModel, colName) => {
       // Intercept updateOne
       if (prop === 'updateOne') {
         return async function (...args) {
-          if (isOnline) {
+          if (getIsOnline()) {
             try {
               const res = await target.updateOne(...args);
               offlineCol.updateOne(...args).catch(() => {});
@@ -153,7 +158,7 @@ export const createHybridModel = (MongooseModel, colName) => {
       // Intercept updateMany
       if (prop === 'updateMany') {
         return async function (...args) {
-          if (isOnline) {
+          if (getIsOnline()) {
             try {
               const res = await target.updateMany(...args);
               offlineCol.updateMany(...args).catch(() => {});
@@ -169,7 +174,7 @@ export const createHybridModel = (MongooseModel, colName) => {
       // Intercept deleteOne & findByIdAndDelete
       if (prop === 'deleteOne' || prop === 'findByIdAndDelete') {
         return async function (...args) {
-          if (isOnline) {
+          if (getIsOnline()) {
             try {
               const res = await target[prop](...args);
               offlineCol[prop](...args).catch(() => {});
@@ -185,7 +190,7 @@ export const createHybridModel = (MongooseModel, colName) => {
       // Intercept deleteMany
       if (prop === 'deleteMany') {
         return async function (...args) {
-          if (isOnline) {
+          if (getIsOnline()) {
             try {
               const res = await target.deleteMany(...args);
               offlineCol.deleteMany(...args).catch(() => {});
@@ -201,7 +206,7 @@ export const createHybridModel = (MongooseModel, colName) => {
       // Intercept countDocuments
       if (prop === 'countDocuments') {
         return async function (...args) {
-          if (isOnline) {
+          if (getIsOnline()) {
             try {
               return await target.countDocuments(...args);
             } catch (err) {
@@ -215,7 +220,7 @@ export const createHybridModel = (MongooseModel, colName) => {
       // Intercept aggregate
       if (prop === 'aggregate') {
         return async function (...args) {
-          if (isOnline) {
+          if (getIsOnline()) {
             try {
               return await target.aggregate(...args);
             } catch (err) {

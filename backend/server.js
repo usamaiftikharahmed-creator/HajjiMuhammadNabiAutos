@@ -81,6 +81,60 @@ app.use(cors({
 app.use(express.json({ limit: '50mb' }));
 app.use(cookieParser());
 
+// DB Connection Pool for Serverless & Long-running servers
+let cachedDbPromise = null;
+export const connectDB = async () => {
+  if (mongoose.connection.readyState === 1) return mongoose.connection;
+
+  if (mongoose.connection.readyState === 0 || mongoose.connection.readyState === 3 || !cachedDbPromise) {
+    cachedDbPromise = null;
+    const mongoUri = process.env.MONGO_URI;
+    if (!mongoUri) {
+      console.warn('⚡ MONGO_URI environment variable is missing!');
+      return null;
+    }
+
+    cachedDbPromise = mongoose.connect(mongoUri, {
+      serverSelectionTimeoutMS: 10000,
+      connectTimeoutMS: 10000,
+      socketTimeoutMS: 45000,
+      maxPoolSize: 10
+    }).then(async (m) => {
+      console.log('☁️ Cloud Atlas Connected! ReadyState:', mongoose.connection.readyState);
+      if (!process.env.VERCEL) {
+        syncOfflineDataToAtlas().catch(e => console.warn('Sync notice:', e.message));
+      }
+      return m;
+    }).catch(err => {
+      cachedDbPromise = null;
+      console.warn('⚡ MongoDB Connection Error:', err.message);
+      throw err;
+    });
+  }
+
+  try {
+    await cachedDbPromise;
+    return mongoose.connection;
+  } catch (err) {
+    cachedDbPromise = null;
+    throw err;
+  }
+};
+
+// Ensure Atlas DB connection is established BEFORE ANY route executes
+app.use(async (req, res, next) => {
+  if (req.path.startsWith('/api') || req.path.startsWith('/auth') || req.path.startsWith('/uploads')) {
+    if (mongoose.connection.readyState !== 1) {
+      try {
+        await connectDB();
+      } catch (e) {
+        console.warn('DB connect notice in middleware:', e.message);
+      }
+    }
+  }
+  next();
+});
+
 import { getUploadDirs } from './services/uploadService.js';
 
 // Serve uploaded files statically from all possible directories
@@ -133,41 +187,6 @@ app.use('/logs', logRoutes);
 
 app.use('/api/backup', backupRoutes);
 app.use('/backup', backupRoutes);
-
-// DB Connection Pool for Serverless & Long-running servers
-let cachedDbPromise = null;
-export const connectDB = async () => {
-  if (mongoose.connection.readyState === 1) return mongoose.connection;
-  if (!cachedDbPromise) {
-    cachedDbPromise = mongoose.connect(process.env.MONGO_URI, {
-      serverSelectionTimeoutMS: 5000,
-      connectTimeoutMS: 5000
-    }).then(async (m) => {
-      console.log('☁️ Cloud Atlas Connected! Synchronizing data with local drive...');
-      syncOfflineDataToAtlas().catch(e => console.warn('Sync notice:', e.message));
-      return m;
-    }).catch(err => {
-      cachedDbPromise = null;
-      console.warn('⚡ Operating in Offline Mode (Local JSON Database Active):', err.message);
-      throw err;
-    });
-  }
-  return cachedDbPromise;
-};
-
-// Ensure Atlas DB connection is triggered on API calls (for Serverless compatibility)
-app.use(async (req, res, next) => {
-  if (req.path.startsWith('/api') || req.path.startsWith('/auth')) {
-    if (mongoose.connection.readyState !== 1) {
-      try {
-        await connectDB();
-      } catch (e) {
-        // Fallback to offline mode seamlessly
-      }
-    }
-  }
-  next();
-});
 
 app.get('/api/debug-db', async (req, res) => {
   try {
@@ -304,18 +323,25 @@ const seedAdmin = async () => {
   }
 };
 
-// Prevent Mongoose from freezing requests when offline / disconnected
-mongoose.set('bufferCommands', false);
+// Prevent Mongoose from freezing requests when offline / disconnected (Desktop only)
+if (!process.env.VERCEL) {
+  mongoose.set('bufferCommands', false);
+}
 
 // DATABASE CONNECTION & SERVER START
 mongoose.connection.on('connected', () => {
   console.log('✅ MongoDB Atlas Connected Successfully');
 });
 mongoose.connection.on('error', (err) => {
+  cachedDbPromise = null;
   console.warn('⚠️ MongoDB Connection Notice:', err.message);
 });
 mongoose.connection.on('disconnected', () => {
+  cachedDbPromise = null;
   console.warn('⚡ Operating in Offline Mode (Local JSON Database Active)');
+});
+mongoose.connection.on('close', () => {
+  cachedDbPromise = null;
 });
 
 // Prevent unhandled promise rejections or uncaught errors from killing server

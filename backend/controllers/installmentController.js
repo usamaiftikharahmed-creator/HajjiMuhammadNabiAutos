@@ -46,6 +46,16 @@ export const createInstallmentSale = async (req, res) => {
     const dueDateDay = Number(req.body.dueDateDay) || 5;
     const paymentMethod = req.body.paymentMode || req.body.paymentMethod || 'Cash';
 
+    // Support custom/past booking date for legacy client entry
+    const rawBookingDate = req.body.bookingDate || req.body.saleDate || req.body.date;
+    let bookingDate = new Date();
+    if (rawBookingDate) {
+      const parsed = new Date(rawBookingDate);
+      if (!isNaN(parsed.getTime())) {
+        bookingDate = parsed;
+      }
+    }
+
     const total = totalAmount;
     const remainingBalance = Math.max(0, total - advancePayment);
     const totalMonths = Number(req.body.totalMonths) || (monthlyAmount > 0 ? Math.ceil(remainingBalance / monthlyAmount) : 1);
@@ -140,8 +150,8 @@ export const createInstallmentSale = async (req, res) => {
       );
     }
 
-    // Calculate initial nextDueDate (Next month on dueDateDay)
-    const nextDue = new Date();
+    // Calculate initial nextDueDate (Next month from bookingDate on dueDateDay)
+    const nextDue = new Date(bookingDate);
     nextDue.setMonth(nextDue.getMonth() + 1);
     nextDue.setDate(dueDateDay);
 
@@ -173,7 +183,8 @@ export const createInstallmentSale = async (req, res) => {
       guarantor2CnicBack,
       documents,
       nextDueDate: nextDue,
-      lastPaymentDate: advancePayment > 0 ? new Date() : null,
+      createdAt: bookingDate,
+      lastPaymentDate: advancePayment > 0 ? bookingDate : null,
       status: remainingBalance === 0 ? 'completed' : 'active',
       createdBy: req.user?._id || null
     });
@@ -187,7 +198,8 @@ export const createInstallmentSale = async (req, res) => {
         paymentMethod,
         forMonth: 'Advance Payment',
         receivedBy: req.user?._id || null,
-        notes: 'Advance Payment at Booking'
+        notes: 'Advance Payment at Booking',
+        createdAt: bookingDate
       });
     }
 

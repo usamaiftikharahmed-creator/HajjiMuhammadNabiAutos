@@ -14,6 +14,7 @@ export default function AddInstallmentModal({ onClose, onSuccess }) {
   const [calculationSource, setCalculationSource] = useState('totalMonths'); // 'totalMonths' | 'monthlyKist'
 
   const [formData, setFormData] = useState({
+    bookingDate: new Date().toISOString().split('T')[0],
     customerName: '',
     phone1: '',
     phone2: '',
@@ -404,6 +405,7 @@ export default function AddInstallmentModal({ onClose, onSuccess }) {
       submitData.append('guarantorPhone', formData.guarantor1Phone);
       submitData.append('monthlyAmount', formData.monthlyKist);
       submitData.append('paymentMethod', formData.paymentMode);
+      submitData.append('saleDate', formData.bookingDate);
 
       // Append fixed CNIC files
       Object.keys(files).forEach(key => {
@@ -737,6 +739,21 @@ export default function AddInstallmentModal({ onClose, onSuccess }) {
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5 pt-1">
+              <div>
+                <label className="block text-slate-300 mb-1 font-medium flex items-center justify-between">
+                  <span>Booking / Sale Date *</span>
+                  <span className="text-[10px] text-amber-400 font-semibold bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/20">Purani / Aaj Ki</span>
+                </label>
+                <input
+                  type="date"
+                  required
+                  name="bookingDate"
+                  value={formData.bookingDate}
+                  onChange={handleInputChange}
+                  className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3.5 py-2 text-white outline-none focus:border-amber-500 text-xs font-mono"
+                />
+              </div>
+
               <div>
                 <label className="block text-slate-300 mb-1 font-medium">Item Name *</label>
                 <input
