@@ -254,8 +254,11 @@ export default function ViewDetailsModal({ selectedSale, onClose, onRefresh, onO
               <div>
                 <span className="text-slate-400 block">Item Purchased</span>
                 <span className="text-white font-bold text-sm block">{selectedSale.itemName}</span>
-                {(selectedSale.registrationNumber || selectedSale.itemRegNumber || selectedSale.engineNumber || selectedSale.chassisNumber) && (
+                {(selectedSale.modelYear || selectedSale.registrationNumber || selectedSale.itemRegNumber || selectedSale.engineNumber || selectedSale.chassisNumber) && (
                   <div className="mt-1 space-y-0.5 text-[11px]">
+                    {selectedSale.modelYear && (
+                      <p className="text-purple-300 font-mono">Model (Year): <strong>{selectedSale.modelYear}</strong></p>
+                    )}
                     {(selectedSale.registrationNumber || selectedSale.itemRegNumber) && (
                       <p className="text-blue-300 font-mono">Reg: <strong>{selectedSale.registrationNumber || selectedSale.itemRegNumber}</strong></p>
                     )}

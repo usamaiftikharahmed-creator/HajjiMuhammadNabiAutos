@@ -20,6 +20,10 @@ const installmentSaleSchema = new mongoose.Schema(
       type: String,
       default: ''
     },
+    modelYear: {
+      type: String,
+      default: ''
+    },
     engineNumber: {
       type: String,
       default: ''

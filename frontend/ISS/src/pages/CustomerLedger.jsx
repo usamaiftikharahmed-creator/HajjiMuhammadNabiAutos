@@ -66,6 +66,7 @@ export default function CustomerLedger() {
     remainingBalance: 0,   // DISPLAY
     itemRegNumber: '',     // EDITABLE
     registrationNumber: '',// EDITABLE
+    modelYear: '',         // EDITABLE
     engineNumber: '',      // EDITABLE
     chassisNumber: '',     // EDITABLE
     monthlyAmount: '',     // EDITABLE
@@ -177,6 +178,7 @@ export default function CustomerLedger() {
           remainingBalance: primarySale?.remainingBalance || 0,
           itemRegNumber: primarySale?.registrationNumber || primarySale?.itemRegNumber || primarySale?.regNumber || '',
           registrationNumber: primarySale?.registrationNumber || primarySale?.itemRegNumber || '',
+          modelYear: primarySale?.modelYear || '',
           engineNumber: primarySale?.engineNumber || '',
           chassisNumber: primarySale?.chassisNumber || '',
           monthlyAmount: primarySale?.monthlyAmount || '',
@@ -214,6 +216,7 @@ export default function CustomerLedger() {
         remainingBalance: sale.remainingBalance || 0,
         itemRegNumber: sale.registrationNumber || sale.itemRegNumber || sale.regNumber || '',
         registrationNumber: sale.registrationNumber || sale.itemRegNumber || '',
+        modelYear: sale.modelYear || '',
         engineNumber: sale.engineNumber || '',
         chassisNumber: sale.chassisNumber || '',
         monthlyAmount: sale.monthlyAmount || '',
@@ -336,6 +339,7 @@ export default function CustomerLedger() {
         await API.put(`/installments/sales/${editFormData.saleId}`, {
           itemRegNumber: editFormData.registrationNumber || editFormData.itemRegNumber,
           registrationNumber: editFormData.registrationNumber || editFormData.itemRegNumber,
+          modelYear: editFormData.modelYear,
           engineNumber: editFormData.engineNumber,
           chassisNumber: editFormData.chassisNumber,
           monthlyAmount: editFormData.monthlyAmount,
@@ -793,6 +797,11 @@ export default function CustomerLedger() {
                         <h5 className="font-bold text-white text-base print:text-black">{sale.itemName}</h5>
                         
                         <div className="flex flex-wrap gap-2 mt-1.5">
+                          {sale.modelYear && (
+                            <p className="text-xs text-purple-400 font-semibold flex items-center gap-1 print:text-purple-800">
+                              Model: <span className="bg-purple-950/80 border border-purple-800 text-purple-200 px-2 py-0.5 rounded text-xs font-bold font-mono print:bg-gray-200 print:text-black">{sale.modelYear}</span>
+                            </p>
+                          )}
                           {regNo && (
                             <p className="text-xs text-blue-400 font-semibold flex items-center gap-1 print:text-blue-800">
                               <Hash className="w-3.5 h-3.5 text-blue-400" /> Reg: <span className="bg-blue-950/80 border border-blue-800 text-blue-200 px-2 py-0.5 rounded text-xs font-bold font-mono print:bg-gray-200 print:text-black">{regNo}</span>
@@ -808,8 +817,8 @@ export default function CustomerLedger() {
                               Chas: <span className="bg-emerald-950/80 border border-emerald-800 text-emerald-200 px-2 py-0.5 rounded text-xs font-bold font-mono print:bg-gray-200 print:text-black">{chassisNo}</span>
                             </p>
                           )}
-                          {!regNo && !engineNo && !chassisNo && (
-                            <p className="text-xs text-slate-500 font-medium">No Reg/Engine/Chassis</p>
+                          {!regNo && !engineNo && !chassisNo && !sale.modelYear && (
+                            <p className="text-xs text-slate-500 font-medium">No Reg/Model/Engine/Chassis</p>
                           )}
                         </div>
 
@@ -1483,6 +1492,17 @@ export default function CustomerLedger() {
                         value={editFormData.registrationNumber || editFormData.itemRegNumber}
                         onChange={(e) => setEditFormData({ ...editFormData, registrationNumber: e.target.value, itemRegNumber: e.target.value })}
                         placeholder="e.g. LEA-12-3456"
+                        className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3.5 py-2 text-white outline-none focus:border-amber-500 text-xs font-mono"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-slate-300 mb-1 font-medium">Model (Year)</label>
+                      <input
+                        type="text"
+                        value={editFormData.modelYear}
+                        onChange={(e) => setEditFormData({ ...editFormData, modelYear: e.target.value })}
+                        placeholder="e.g. 2024 / 2023"
                         className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3.5 py-2 text-white outline-none focus:border-amber-500 text-xs font-mono"
                       />
                     </div>

@@ -27,6 +27,7 @@ export default function AddInstallmentModal({ onClose, onSuccess }) {
     itemName: '',
     itemRegNumber: '', // Optional Field (synced)
     registrationNumber: '', // Optional Field
+    modelYear: '', // Optional Field
     engineNumber: '', // Optional Field
     chassisNumber: '', // Optional Field
     totalAmount: '',
@@ -406,6 +407,8 @@ export default function AddInstallmentModal({ onClose, onSuccess }) {
       submitData.append('monthlyAmount', formData.monthlyKist);
       submitData.append('paymentMethod', formData.paymentMode);
       submitData.append('saleDate', formData.bookingDate);
+      submitData.append('modelYear', formData.modelYear);
+      submitData.append('model', formData.modelYear);
 
       // Append fixed CNIC files
       Object.keys(files).forEach(key => {
@@ -685,25 +688,8 @@ export default function AddInstallmentModal({ onClose, onSuccess }) {
               </div>
             </div>
 
-            {/* Customer Documents (Profile Photo & CNIC Copies) */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2 border-t border-slate-800/80">
-              <div>
-                <div className="flex justify-between items-center mb-1">
-                  <label className="text-slate-400">Customer Profile Photo</label>
-                  {files.profilePic && (
-                    <span className="text-[10px] text-emerald-400 font-bold flex items-center gap-0.5">
-                      <CheckCircle2 className="w-2.5 h-2.5" /> Selected
-                    </span>
-                  )}
-                </div>
-                <input 
-                  type="file" 
-                  accept="image/*" 
-                  name="profilePic" 
-                  onChange={handleProfilePicChange} 
-                  className="w-full bg-slate-900 border border-slate-800 rounded-xl p-1.5 text-slate-300 text-xs file:mr-2 file:py-1 file:px-2.5 file:rounded-lg file:border-0 file:text-xs file:bg-blue-600 file:text-white hover:file:bg-blue-500 cursor-pointer" 
-                />
-              </div>
+            {/* Customer Documents (CNIC Copies) */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-slate-800/80">
               <div>
                 <label className="block text-slate-400 mb-1">Customer CNIC Front Image *</label>
                 <input 
@@ -777,6 +763,20 @@ export default function AddInstallmentModal({ onClose, onSuccess }) {
                   value={formData.registrationNumber}
                   onChange={handleInputChange}
                   placeholder="e.g. LEA-12-3456"
+                  className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3.5 py-2 text-white outline-none focus:border-amber-500 text-xs font-mono"
+                />
+              </div>
+
+              <div>
+                <label className="block text-slate-300 mb-1 font-medium">
+                  Model (Year) <span className="text-[10px] text-slate-400 font-normal">(Optional)</span>
+                </label>
+                <input
+                  type="text"
+                  name="modelYear"
+                  value={formData.modelYear}
+                  onChange={handleInputChange}
+                  placeholder="e.g. 2024 / 2023 / 2022"
                   className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3.5 py-2 text-white outline-none focus:border-amber-500 text-xs font-mono"
                 />
               </div>

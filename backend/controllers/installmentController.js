@@ -38,6 +38,7 @@ export const createInstallmentSale = async (req, res) => {
     const itemName = (req.body.itemName || '').trim();
     const registrationNumber = (req.body.registrationNumber || req.body.itemRegNumber || '').trim();
     const itemRegNumber = registrationNumber;
+    const modelYear = (req.body.modelYear || req.body.model || '').trim();
     const engineNumber = (req.body.engineNumber || '').trim();
     const chassisNumber = (req.body.chassisNumber || '').trim();
     const totalAmount = Number(req.body.totalAmount);
@@ -160,6 +161,7 @@ export const createInstallmentSale = async (req, res) => {
       itemName,
       itemRegNumber,
       registrationNumber,
+      modelYear,
       engineNumber,
       chassisNumber,
       totalAmount: total,
@@ -459,7 +461,7 @@ export const getCustomerLedger = async (req, res) => {
       InstallmentSale.find({ customer: customer._id }).sort({ createdAt: -1 }).lean(),
       Payment.find({ customer: customer._id })
         .populate('receivedBy', 'name')
-        .populate('installmentSale', 'itemName itemRegNumber registrationNumber engineNumber chassisNumber totalAmount remainingBalance monthlyAmount')
+        .populate('installmentSale', 'itemName itemRegNumber registrationNumber modelYear engineNumber chassisNumber totalAmount remainingBalance monthlyAmount')
         .sort({ createdAt: -1 })
         .lean()
     ]);
@@ -580,7 +582,7 @@ export const updateSaleDetails = async (req, res) => {
   try {
     const { id } = req.params;
     const { 
-      itemRegNumber, registrationNumber, engineNumber, chassisNumber, monthlyAmount, dueDateDay, totalMonths, promiseMonth, promisedMonths,
+      itemRegNumber, registrationNumber, modelYear, engineNumber, chassisNumber, monthlyAmount, dueDateDay, totalMonths, promiseMonth, promisedMonths,
       status, remarks, guarantorName, guarantorPhone, guarantor2Name, guarantor2Phone 
     } = req.body;
 
@@ -595,6 +597,7 @@ export const updateSaleDetails = async (req, res) => {
       sale.itemRegNumber = updatedReg;
       sale.registrationNumber = updatedReg;
     }
+    if (modelYear !== undefined) sale.modelYear = modelYear.trim();
     if (engineNumber !== undefined) sale.engineNumber = engineNumber.trim();
     if (chassisNumber !== undefined) sale.chassisNumber = chassisNumber.trim();
     if (monthlyAmount !== undefined && Number(monthlyAmount) > 0) sale.monthlyAmount = Number(monthlyAmount);

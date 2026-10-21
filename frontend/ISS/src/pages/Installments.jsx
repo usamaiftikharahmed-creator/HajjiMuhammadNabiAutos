@@ -340,8 +340,13 @@ export default function Installments() {
                         </td>
                         <td className="py-3.5 px-4 text-slate-300">
                           <span className="font-medium text-white block">{item.itemName}</span>
-                          {(item.registrationNumber || item.itemRegNumber || item.engineNumber || item.chassisNumber) && (
+                          {(item.modelYear || item.registrationNumber || item.itemRegNumber || item.engineNumber || item.chassisNumber) && (
                             <div className="flex flex-wrap gap-1 text-[10px] mt-0.5 font-mono">
+                              {item.modelYear && (
+                                <span className="bg-purple-950/60 border border-purple-900 text-purple-300 px-1.5 py-0.5 rounded">
+                                  Model: {item.modelYear}
+                                </span>
+                              )}
                               {(item.registrationNumber || item.itemRegNumber) && (
                                 <span className="bg-blue-950/60 border border-blue-900 text-blue-300 px-1.5 py-0.5 rounded">
                                   Reg: {item.registrationNumber || item.itemRegNumber}
