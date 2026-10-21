@@ -1,3 +1,5 @@
+import axios from 'axios';
+
 // When running in dev on localhost, use local Vite proxy /api.
 // When deployed (in production), use the live Vercel backend directly.
 export const API_BASE_URL = import.meta.env.DEV 
