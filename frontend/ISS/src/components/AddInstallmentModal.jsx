@@ -407,7 +407,6 @@ export default function AddInstallmentModal({ onClose, onSuccess }) {
       submitData.append('monthlyAmount', formData.monthlyKist);
       submitData.append('paymentMethod', formData.paymentMode);
       submitData.append('saleDate', formData.bookingDate);
-      submitData.append('modelYear', formData.modelYear);
       submitData.append('model', formData.modelYear);
 
       // Append fixed CNIC files

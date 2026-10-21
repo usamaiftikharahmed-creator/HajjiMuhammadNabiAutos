@@ -21,34 +21,37 @@ export const invalidateSalesCache = () => {
   }, 10);
 };
 
+// Helper to safely extract and trim string from single or array/multer inputs
+const cleanStr = (val) => String(Array.isArray(val) ? (val[0] ?? '') : (val ?? '')).trim();
+
 // 1. Add New Customer & Create Installment Sale
 export const createInstallmentSale = async (req, res) => {
   try {
-    const customerName = (req.body.customerName || req.body.name || '').trim();
-    const phone = (req.body.phone1 || req.body.phone || '').trim();
-    const phone2 = (req.body.phone2 || '').trim();
-    const cnic = (req.body.cnic || '').trim();
-    const address = (req.body.permanentAddress || req.body.address || '').trim();
+    const customerName = cleanStr(req.body.customerName || req.body.name);
+    const phone = cleanStr(req.body.phone1 || req.body.phone);
+    const phone2 = cleanStr(req.body.phone2);
+    const cnic = cleanStr(req.body.cnic);
+    const address = cleanStr(req.body.permanentAddress || req.body.address);
     
-    const guarantor1Name = (req.body.guarantor1Name || req.body.guarantorName || '').trim();
-    const guarantor1Phone = (req.body.guarantor1Phone || req.body.guarantorPhone || '').trim();
-    const guarantor2Name = (req.body.guarantor2Name || '').trim();
-    const guarantor2Phone = (req.body.guarantor2Phone || '').trim();
+    const guarantor1Name = cleanStr(req.body.guarantor1Name || req.body.guarantorName);
+    const guarantor1Phone = cleanStr(req.body.guarantor1Phone || req.body.guarantorPhone);
+    const guarantor2Name = cleanStr(req.body.guarantor2Name);
+    const guarantor2Phone = cleanStr(req.body.guarantor2Phone);
 
-    const itemName = (req.body.itemName || '').trim();
-    const registrationNumber = (req.body.registrationNumber || req.body.itemRegNumber || '').trim();
+    const itemName = cleanStr(req.body.itemName);
+    const registrationNumber = cleanStr(req.body.registrationNumber || req.body.itemRegNumber);
     const itemRegNumber = registrationNumber;
-    const modelYear = (req.body.modelYear || req.body.model || '').trim();
-    const engineNumber = (req.body.engineNumber || '').trim();
-    const chassisNumber = (req.body.chassisNumber || '').trim();
-    const totalAmount = Number(req.body.totalAmount);
-    const advancePayment = Number(req.body.advancePayment) || 0;
-    const monthlyAmount = Number(req.body.monthlyKist || req.body.monthlyAmount);
-    const dueDateDay = Number(req.body.dueDateDay) || 5;
-    const paymentMethod = req.body.paymentMode || req.body.paymentMethod || 'Cash';
+    const modelYear = cleanStr(req.body.modelYear || req.body.model);
+    const engineNumber = cleanStr(req.body.engineNumber);
+    const chassisNumber = cleanStr(req.body.chassisNumber);
+    const totalAmount = Number(Array.isArray(req.body.totalAmount) ? req.body.totalAmount[0] : req.body.totalAmount);
+    const advancePayment = Number(Array.isArray(req.body.advancePayment) ? req.body.advancePayment[0] : req.body.advancePayment) || 0;
+    const monthlyAmount = Number(Array.isArray(req.body.monthlyKist || req.body.monthlyAmount) ? (req.body.monthlyKist || req.body.monthlyAmount)[0] : (req.body.monthlyKist || req.body.monthlyAmount));
+    const dueDateDay = Number(Array.isArray(req.body.dueDateDay) ? req.body.dueDateDay[0] : req.body.dueDateDay) || 5;
+    const paymentMethod = cleanStr(req.body.paymentMode || req.body.paymentMethod) || 'Cash';
 
     // Support custom/past booking date for legacy client entry
-    const rawBookingDate = req.body.bookingDate || req.body.saleDate || req.body.date;
+    const rawBookingDate = cleanStr(req.body.bookingDate || req.body.saleDate || req.body.date);
     let bookingDate = new Date();
     if (rawBookingDate) {
       const parsed = new Date(rawBookingDate);
@@ -59,9 +62,9 @@ export const createInstallmentSale = async (req, res) => {
 
     const total = totalAmount;
     const remainingBalance = Math.max(0, total - advancePayment);
-    const totalMonths = Number(req.body.totalMonths) || (monthlyAmount > 0 ? Math.ceil(remainingBalance / monthlyAmount) : 1);
-    const promiseMonth = (req.body.promiseMonth || '').trim();
-    const promisedMonths = req.body.promisedMonths ? Number(req.body.promisedMonths) : null;
+    const totalMonths = Number(Array.isArray(req.body.totalMonths) ? req.body.totalMonths[0] : req.body.totalMonths) || (monthlyAmount > 0 ? Math.ceil(remainingBalance / monthlyAmount) : 1);
+    const promiseMonth = cleanStr(req.body.promiseMonth);
+    const promisedMonths = req.body.promisedMonths ? Number(Array.isArray(req.body.promisedMonths) ? req.body.promisedMonths[0] : req.body.promisedMonths) : null;
 
     if (!customerName || !phone || !itemName || !totalAmount || !monthlyAmount) {
       return res.status(400).json({ 
@@ -511,16 +514,16 @@ export const updateCustomer = async (req, res) => {
       id,
       {
         $set: {
-          ...(name && { name: name.trim() }),
-          ...(phone && { phone: phone.trim() }),
-          ...(phone2 !== undefined && { phone2: phone2.trim() }),
-          ...(cnic !== undefined && { cnic: cnic.trim() }),
-          ...(address !== undefined && { address: address.trim() }),
+          ...(name && { name: cleanStr(name) }),
+          ...(phone && { phone: cleanStr(phone) }),
+          ...(phone2 !== undefined && { phone2: cleanStr(phone2) }),
+          ...(cnic !== undefined && { cnic: cleanStr(cnic) }),
+          ...(address !== undefined && { address: cleanStr(address) }),
           ...(profilePic !== undefined && { profilePic }),
-          ...(guarantorName !== undefined && { guarantorName: guarantorName.trim() }),
-          ...(guarantorPhone !== undefined && { guarantorPhone: guarantorPhone.trim() }),
-          ...(guarantor2Name !== undefined && { guarantor2Name: guarantor2Name.trim() }),
-          ...(guarantor2Phone !== undefined && { guarantor2Phone: guarantor2Phone.trim() })
+          ...(guarantorName !== undefined && { guarantorName: cleanStr(guarantorName) }),
+          ...(guarantorPhone !== undefined && { guarantorPhone: cleanStr(guarantorPhone) }),
+          ...(guarantor2Name !== undefined && { guarantor2Name: cleanStr(guarantor2Name) }),
+          ...(guarantor2Phone !== undefined && { guarantor2Phone: cleanStr(guarantor2Phone) })
         }
       },
       { new: true, runValidators: true }
@@ -602,8 +605,8 @@ export const updateSaleDetails = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Installment sale not found' });
     }
 
-    if (itemName !== undefined && itemName.trim()) {
-      sale.itemName = itemName.trim();
+    if (itemName !== undefined && cleanStr(itemName)) {
+      sale.itemName = cleanStr(itemName);
     }
 
     let hasPriceOrAdvanceChange = false;
@@ -648,26 +651,26 @@ export const updateSaleDetails = async (req, res) => {
     }
 
     // Editable fields
-    const updatedReg = registrationNumber !== undefined ? registrationNumber.trim() : (itemRegNumber !== undefined ? itemRegNumber.trim() : undefined);
+    const updatedReg = registrationNumber !== undefined ? cleanStr(registrationNumber) : (itemRegNumber !== undefined ? cleanStr(itemRegNumber) : undefined);
     if (updatedReg !== undefined) {
       sale.itemRegNumber = updatedReg;
       sale.registrationNumber = updatedReg;
     }
-    if (modelYear !== undefined) sale.modelYear = modelYear.trim();
-    if (engineNumber !== undefined) sale.engineNumber = engineNumber.trim();
-    if (chassisNumber !== undefined) sale.chassisNumber = chassisNumber.trim();
+    if (modelYear !== undefined) sale.modelYear = cleanStr(modelYear);
+    if (engineNumber !== undefined) sale.engineNumber = cleanStr(engineNumber);
+    if (chassisNumber !== undefined) sale.chassisNumber = cleanStr(chassisNumber);
     if (monthlyAmount !== undefined && Number(monthlyAmount) > 0) sale.monthlyAmount = Number(monthlyAmount);
     if (dueDateDay !== undefined && Number(dueDateDay) >= 1 && Number(dueDateDay) <= 31) sale.dueDateDay = Number(dueDateDay);
     if (totalMonths !== undefined && Number(totalMonths) > 0) sale.totalMonths = Number(totalMonths);
-    if (promiseMonth !== undefined) sale.promiseMonth = promiseMonth.trim();
+    if (promiseMonth !== undefined) sale.promiseMonth = cleanStr(promiseMonth);
     if (promisedMonths !== undefined) sale.promisedMonths = promisedMonths ? Number(promisedMonths) : null;
     if (status && ['active', 'completed'].includes(status)) sale.status = status;
-    if (remarks !== undefined) sale.remarks = remarks.trim();
+    if (remarks !== undefined) sale.remarks = cleanStr(remarks);
 
-    if (guarantorName !== undefined) sale.guarantorName = guarantorName.trim();
-    if (guarantorPhone !== undefined) sale.guarantorPhone = guarantorPhone.trim();
-    if (guarantor2Name !== undefined) sale.guarantor2Name = guarantor2Name.trim();
-    if (guarantor2Phone !== undefined) sale.guarantor2Phone = guarantor2Phone.trim();
+    if (guarantorName !== undefined) sale.guarantorName = cleanStr(guarantorName);
+    if (guarantorPhone !== undefined) sale.guarantorPhone = cleanStr(guarantorPhone);
+    if (guarantor2Name !== undefined) sale.guarantor2Name = cleanStr(guarantor2Name);
+    if (guarantor2Phone !== undefined) sale.guarantor2Phone = cleanStr(guarantor2Phone);
 
     // Recalculate remainingBalance accurately if total or advance changed
     if (hasPriceOrAdvanceChange) {
@@ -813,7 +816,7 @@ export const updatePromiseDate = async (req, res) => {
       callStatus: resolvedCallStatus,
       followUpDate: fDate,
       promiseDate: pDate,
-      remarks: (remarks || '').trim(),
+      remarks: cleanStr(remarks),
       addedBy: authorId,
       addedByName: authorName,
       createdAt: new Date()
@@ -825,7 +828,7 @@ export const updatePromiseDate = async (req, res) => {
     sale.followUps.push(newFollowUp);
     sale.callStatus = resolvedCallStatus;
     sale.promiseDate = pDate;
-    sale.remarks = (remarks || '').trim() || sale.remarks;
+    sale.remarks = cleanStr(remarks) || sale.remarks;
 
     await sale.save();
     await sale.populate('customer');
