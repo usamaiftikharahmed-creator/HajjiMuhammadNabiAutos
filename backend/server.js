@@ -147,6 +147,36 @@ app.use(async (req, res, next) => {
   next();
 });
 
+app.get('/api/debug-db', async (req, res) => {
+  try {
+    const uri = process.env.MONGO_URI || 'not-set';
+    const maskedUri = uri.replace(/:([^@]+)@/, ':***@');
+    const start = Date.now();
+    await connectDB();
+    const duration = Date.now() - start;
+    const db = mongoose.connection.db;
+    const collections = await db.listCollections().toArray();
+    const customerCount = await db.collection('customers').countDocuments();
+    res.json({
+      success: true,
+      duration: `${duration}ms`,
+      uri: maskedUri,
+      readyState: mongoose.connection.readyState,
+      customerCount,
+      collections: collections.map(c => c.name)
+    });
+  } catch (err) {
+    res.status(500).json({
+      success: false,
+      uri: (process.env.MONGO_URI || '').replace(/:([^@]+)@/, ':***@'),
+      errorName: err.name,
+      errorMessage: err.message,
+      errorCode: err.code,
+      errorStack: err.stack
+    });
+  }
+});
+
 app.get('/api/system-status', async (req, res) => {
   if (mongoose.connection.readyState !== 1) {
     try {
