@@ -146,6 +146,7 @@ getUploadDirs().forEach(dir => {
 app.get('/uploads/:filename', (req, res, next) => {
   const filename = path.basename(req.params.filename);
   const possibleDirs = [
+    path.join(os.tmpdir(), 'uploads'),
     path.resolve(__dirname, 'uploads'),
     path.resolve(__dirname, '..', 'uploads'),
     path.resolve(process.cwd(), 'backend', 'uploads'),

@@ -423,9 +423,7 @@ export default function AddInstallmentModal({ onClose, onSuccess }) {
         }
       });
 
-      const res = await API.post('/installments/sales', submitData, {
-        headers: { 'Content-Type': 'multipart/form-data' }
-      });
+      const res = await API.post('/installments/sales', submitData);
 
       if (res.data?.success) {
         toast.success(`Naya installment account (${res.data.customerId || 'CUST'}) kamyabi se create ho gaya!`);

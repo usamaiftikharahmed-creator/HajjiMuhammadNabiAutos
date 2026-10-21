@@ -115,8 +115,18 @@ export const createInstallmentSale = async (req, res) => {
     });
 
     if (!customer) {
-      const customerCount = await Customer.countDocuments();
-      const customerId = `CUST-${1001 + customerCount}`;
+      let maxCustNum = 1000;
+      const allCusts = await Customer.find({}, { customerId: 1 }).lean();
+      allCusts.forEach(c => {
+        if (c.customerId && typeof c.customerId === 'string') {
+          const match = c.customerId.match(/\d+/);
+          if (match) {
+            const num = parseInt(match[0], 10);
+            if (!isNaN(num) && num > maxCustNum) maxCustNum = num;
+          }
+        }
+      });
+      const customerId = `CUST-${maxCustNum + 1}`;
 
       customer = await Customer.create({
         customerId,
