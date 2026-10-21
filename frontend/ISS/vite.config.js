@@ -2,12 +2,22 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 
+import { browserslistToTargets } from 'lightningcss'
+import browserslist from 'browserslist'
+
 export default defineConfig({
   plugins: [
     react(),
     tailwindcss(),
   ],
+  css: {
+    transformer: 'lightningcss',
+    lightningcss: {
+      targets: browserslistToTargets(browserslist('chrome >= 80, edge >= 80, safari >= 14, firefox >= 80'))
+    }
+  },
   build: {
+    cssMinify: 'lightningcss',
     rollupOptions: {
       output: {
         manualChunks(id) {

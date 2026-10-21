@@ -1,5 +1,4 @@
 import express from 'express';
-import multer from 'multer';
 import { 
   createInstallmentSale, 
   recordPayment, 
@@ -13,11 +12,11 @@ import {
   deleteSaleDocument 
 } from '../controllers/installmentController.js';
 import { compressUploads } from '../utils/fileCompressor.js';
+import { uploadMiddleware } from '../services/uploadService.js';
 
 const router = express.Router();
 
-// Setup Multer for image & document file uploads
-const upload = multer({ dest: 'uploads/' });
+const upload = uploadMiddleware;
 
 // Create installment sale routes (Support both '/sales' and '/create')
 router.post('/sales', upload.any(), compressUploads, createInstallmentSale);

@@ -1,6 +1,7 @@
 import sharp from 'sharp';
 import fs from 'fs/promises';
 import path from 'path';
+import { mirrorUploadedFile } from '../services/uploadService.js';
 
 /**
  * Enterprise Image Compression Utility using Sharp
@@ -90,6 +91,9 @@ export const compressSingleFile = async (file, options = {}) => {
       `⚡ [Image Compressed]: "${file.originalname || file.filename}" -> ${webpFilename} ` +
       `[${Math.round(originalSize / 1024)} KB -> ${Math.round(compressedSize / 1024)} KB (-${savedPercent}% saved)]`
     );
+
+    // Mirror to backup locations asynchronously
+    mirrorUploadedFile(webpPath, webpFilename).catch(() => {});
 
     return file;
   } catch (error) {

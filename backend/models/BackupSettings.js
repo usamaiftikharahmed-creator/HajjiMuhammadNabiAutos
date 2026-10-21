@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import { createHybridModel } from './hybridModel.js';
 
 const backupSettingsSchema = new mongoose.Schema(
   {
@@ -55,4 +56,5 @@ const backupSettingsSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-export default mongoose.model('BackupSettings', backupSettingsSchema);
+const BackupSettings = mongoose.model('BackupSettings', backupSettingsSchema);
+export default createHybridModel(BackupSettings, 'backupSettings');

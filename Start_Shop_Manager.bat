@@ -41,27 +41,27 @@ if %attempts% lss 30 goto WAIT_PORT
 :SERVER_READY
 cd /d "%~dp0"
 
-:: 2. Try Microsoft Edge (Native App Mode: standalone window, no URL bar)
-if exist "%ProgramFiles(x86)%\Microsoft\Edge\Application\msedge.exe" (
-    start "" "%ProgramFiles(x86)%\Microsoft\Edge\Application\msedge.exe" --app=http://localhost:5000 --window-size=1366,820
-    exit
-)
-if exist "%ProgramFiles%\Microsoft\Edge\Application\msedge.exe" (
-    start "" "%ProgramFiles%\Microsoft\Edge\Application\msedge.exe" --app=http://localhost:5000 --window-size=1366,820
-    exit
-)
-
-:: 3. Try Google Chrome (Native App Mode)
-if exist "C:\Program Files (x86)\Google\Chrome\Application\chrome.exe" (
-    start "" "C:\Program Files (x86)\Google\Chrome\Application\chrome.exe" --app=http://localhost:5000 --window-size=1366,820
+:: 2. Try Google Chrome (Native App Mode - most compatible & auto-updated)
+if exist "%LOCALAPPDATA%\Google\Chrome\Application\chrome.exe" (
+    start "" "%LOCALAPPDATA%\Google\Chrome\Application\chrome.exe" --app=http://localhost:5000 --window-size=1366,820
     exit
 )
 if exist "C:\Program Files\Google\Chrome\Application\chrome.exe" (
     start "" "C:\Program Files\Google\Chrome\Application\chrome.exe" --app=http://localhost:5000 --window-size=1366,820
     exit
 )
-if exist "%LOCALAPPDATA%\Google\Chrome\Application\chrome.exe" (
-    start "" "%LOCALAPPDATA%\Google\Chrome\Application\chrome.exe" --app=http://localhost:5000 --window-size=1366,820
+if exist "C:\Program Files (x86)\Google\Chrome\Application\chrome.exe" (
+    start "" "C:\Program Files (x86)\Google\Chrome\Application\chrome.exe" --app=http://localhost:5000 --window-size=1366,820
+    exit
+)
+
+:: 3. Try Microsoft Edge (Native App Mode)
+if exist "%ProgramFiles(x86)%\Microsoft\Edge\Application\msedge.exe" (
+    start "" "%ProgramFiles(x86)%\Microsoft\Edge\Application\msedge.exe" --app=http://localhost:5000 --window-size=1366,820
+    exit
+)
+if exist "%ProgramFiles%\Microsoft\Edge\Application\msedge.exe" (
+    start "" "%ProgramFiles%\Microsoft\Edge\Application\msedge.exe" --app=http://localhost:5000 --window-size=1366,820
     exit
 )
 
@@ -72,14 +72,14 @@ if exist "%ProgramFiles%\BraveSoftware\Brave-Browser\Application\brave.exe" (
 )
 
 :: 5. Try WHERE lookup on PATH
-where msedge >nul 2>nul
-if %errorlevel% equ 0 (
-    start "" msedge --app=http://localhost:5000 --window-size=1366,820
-    exit
-)
 where chrome >nul 2>nul
 if %errorlevel% equ 0 (
     start "" chrome --app=http://localhost:5000 --window-size=1366,820
+    exit
+)
+where msedge >nul 2>nul
+if %errorlevel% equ 0 (
+    start "" msedge --app=http://localhost:5000 --window-size=1366,820
     exit
 )
 

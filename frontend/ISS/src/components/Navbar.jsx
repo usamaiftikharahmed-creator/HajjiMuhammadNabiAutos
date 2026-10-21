@@ -1,9 +1,35 @@
-import { Menu, LogOut, ShieldCheck } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import API from '../api/axios';
+import { Menu, LogOut, ShieldCheck, Cloud, Zap } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import AdminDueNotifications from './AdminDueNotifications';
 
 export default function Navbar({ onToggleSidebar, onNavigateRecovery, onNavigateAll }) {
   const { user, logout } = useAuth();
+  const [systemStatus, setSystemStatus] = useState({ mode: 'offline', statusMessage: 'Offline Mode (Local Drive Active)' });
+
+  useEffect(() => {
+    const checkStatus = async () => {
+      try {
+        const { data } = await API.get('/system-status');
+        if (data?.success) {
+          setSystemStatus({
+            mode: data.mode,
+            statusMessage: data.statusMessage
+          });
+        }
+      } catch (e) {
+        setSystemStatus({
+          mode: 'offline',
+          statusMessage: 'Offline Mode (Local Drive Active - 100% Safe)'
+        });
+      }
+    };
+
+    checkStatus();
+    const interval = setInterval(checkStatus, 15000);
+    return () => clearInterval(interval);
+  }, []);
 
   return (
     <header className="h-16 bg-slate-900/80 backdrop-blur-md border-b border-slate-800 px-6 flex justify-between items-center sticky top-0 z-30">
@@ -14,9 +40,22 @@ export default function Navbar({ onToggleSidebar, onNavigateRecovery, onNavigate
         >
           <Menu className="w-5 h-5" />
         </button>
-        <span className="text-slate-400 text-xs hidden sm:inline-block border border-slate-800 bg-slate-950 px-3 py-1 rounded-full">
-          Secure HTTP-Only Session
-        </span>
+        
+        {/* Live Cloud & Google Drive Sync Badge */}
+        {systemStatus.mode === 'online' ? (
+          <span className="flex items-center gap-1.5 text-xs border border-emerald-500/30 bg-emerald-950/40 text-emerald-400 px-3 py-1 rounded-full font-medium shadow-sm">
+            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+            <Cloud className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">Google Drive & Cloud Synced</span>
+            <span className="sm:hidden">Online</span>
+          </span>
+        ) : (
+          <span className="flex items-center gap-1.5 text-xs border border-amber-500/30 bg-amber-950/40 text-amber-400 px-3 py-1 rounded-full font-medium shadow-sm" title="System operates 100% offline. Local drive files will auto-upload when internet reconnects.">
+            <Zap className="w-3.5 h-3.5 text-amber-400" />
+            <span className="hidden sm:inline">Offline Mode (Local Drive Active)</span>
+            <span className="sm:hidden">Offline (Safe)</span>
+          </span>
+        )}
       </div>
 
       <div className="flex items-center gap-3 sm:gap-4">

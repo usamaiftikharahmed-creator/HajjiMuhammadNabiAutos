@@ -2,8 +2,10 @@ import User from '../models/User.js';
 import jwt from 'jsonwebtoken';
 import { logActivity } from '../utils/logger.js';
 
+const JWT_SECRET = process.env.JWT_SECRET || 'hajji_mohammad_nabi_autos_secret_key_2026_secure';
+
 const generateToken = (id) => {
-  return jwt.sign({ id }, process.env.JWT_SECRET, { expiresIn: '12h' });
+  return jwt.sign({ id }, JWT_SECRET, { expiresIn: '12h' });
 };
 
 export const registerUser = async (req, res) => {

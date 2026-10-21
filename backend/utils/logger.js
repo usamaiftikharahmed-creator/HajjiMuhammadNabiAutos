@@ -15,15 +15,16 @@ export const logActivity = async ({
   try {
     let resolvedUser = user || req?.user;
 
+    const JWT_SECRET = process.env.JWT_SECRET || 'hajji_mohammad_nabi_autos_secret_key_2026_secure';
     // If req has token but no req.user yet, decode token
     if (!resolvedUser && req) {
       let token = req.cookies?.jwt;
       if (!token && req.headers?.authorization?.startsWith('Bearer')) {
         token = req.headers.authorization.split(' ')[1];
       }
-      if (token && process.env.JWT_SECRET) {
+      if (token) {
         try {
-          const decoded = jwt.verify(token, process.env.JWT_SECRET);
+          const decoded = jwt.verify(token, JWT_SECRET);
           if (decoded?.id) {
             resolvedUser = await User.findById(decoded.id).select('name role');
           }

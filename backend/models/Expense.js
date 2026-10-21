@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import { createHybridModel } from './hybridModel.js';
 
 const expenseSchema = new mongoose.Schema({
   title: {
@@ -40,4 +41,5 @@ expenseSchema.index({ date: -1 });
 expenseSchema.index({ category: 1 });
 expenseSchema.index({ date: -1, category: 1 });
 
-export default mongoose.model('Expense', expenseSchema);
+const Expense = mongoose.model('Expense', expenseSchema);
+export default createHybridModel(Expense, 'expenses');

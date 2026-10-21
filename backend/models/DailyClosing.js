@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import { createHybridModel } from './hybridModel.js';
 
 const dailyClosingSchema = new mongoose.Schema({
   dateStr: {
@@ -49,4 +50,5 @@ const dailyClosingSchema = new mongoose.Schema({
 }, { timestamps: true });
 dailyClosingSchema.index({ createdAt: -1 });
 dailyClosingSchema.index({ isClosed: 1 });
-export default mongoose.model('DailyClosing', dailyClosingSchema);
+const DailyClosing = mongoose.model('DailyClosing', dailyClosingSchema);
+export default createHybridModel(DailyClosing, 'dailyClosings');

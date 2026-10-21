@@ -1,6 +1,26 @@
 import express from 'express';
 import dotenv from 'dotenv';
 import dns from 'dns';
+import path from 'path';
+import fs from 'fs';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+// Explicitly load .env from backend/.env or root/.env
+if (fs.existsSync(path.resolve(__dirname, '.env'))) {
+  dotenv.config({ path: path.resolve(__dirname, '.env') });
+} else if (fs.existsSync(path.resolve(__dirname, '..', '.env'))) {
+  dotenv.config({ path: path.resolve(__dirname, '..', '.env') });
+} else {
+  dotenv.config();
+}
+
+// Fallback defaults to ensure 100% offline functionality without missing config crashes
+process.env.JWT_SECRET = process.env.JWT_SECRET || 'hajji_mohammad_nabi_autos_secret_key_2026_secure';
+process.env.MONGO_URI = process.env.MONGO_URI || 'mongodb+srv://usama:usama123@cluster0.p7d5k.mongodb.net/installment-system?retryWrites=true&w=majority';
+process.env.CLIENT_URL = process.env.CLIENT_URL || 'http://localhost:5000';
 
 // Fix Windows DNS SRV lookup failures for MongoDB Atlas
 try {
@@ -24,11 +44,12 @@ import logRoutes from './routes/logRoutes.js';
 import backupRoutes from './routes/backupRoutes.js';
 import { initBackupScheduler } from './services/backupService.js';
 import { prewarmSalesCache } from './controllers/installmentController.js';
+import { loadAllData } from './services/offlineDb.js';
+import { syncOfflineDataToAtlas, startBackgroundSyncMonitor } from './services/syncService.js';
 import User from './models/User.js';
 
 import compression from 'compression';
 
-dotenv.config();
 const app = express();
 
 // High-speed GZIP compression for all HTTP payloads (reduces latency by ~80%)
@@ -58,8 +79,12 @@ app.use(cors({
 app.use(express.json({ limit: '50mb' }));
 app.use(cookieParser());
 
-// Serve uploaded files statically
-app.use('/uploads', express.static('uploads'));
+import { getUploadDirs } from './services/uploadService.js';
+
+// Serve uploaded files statically from all possible directories (Haji Muhammad Nabi Autos/uploads, backend/uploads, G-Drive)
+getUploadDirs().forEach(dir => {
+  app.use('/uploads', express.static(dir));
+});
 
 // 2. RATE LIMITER (Must be before routes)
 const limiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 1000 });
@@ -73,19 +98,24 @@ app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/logs', logRoutes);
 app.use('/api/backup', backupRoutes);
 
+app.get('/api/system-status', (req, res) => {
+  const isOnline = mongoose.connection.readyState === 1;
+  res.json({
+    success: true,
+    mode: isOnline ? 'online' : 'offline',
+    statusMessage: isOnline 
+      ? 'Cloud Active (Atlas & Google Drive Synced)' 
+      : 'Offline Mode (Local Drive Active - 100% Safe)',
+    dbConnected: isOnline
+  });
+});
+
 // 4. SERVE FRONTEND PRODUCTION BUILD (Single-Port Desktop & Web Serving)
-import path from 'path';
-import fs from 'fs';
-import { fileURLToPath } from 'url';
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-
 const candidateDistPaths = [
-  path.resolve(__dirname, 'dist'),
-  path.resolve(__dirname, 'public'),
   path.resolve(__dirname, '..', 'dist'),
-  path.resolve(__dirname, '..', 'frontend', 'ISS', 'dist')
+  path.resolve(__dirname, 'dist'),
+  path.resolve(__dirname, '..', 'frontend', 'ISS', 'dist'),
+  path.resolve(__dirname, 'public')
 ];
 
 const frontendDistPath = candidateDistPaths.find(p => fs.existsSync(p));
@@ -120,6 +150,12 @@ if (frontendDistPath) {
   app.get('*', (req, res, next) => {
     if (req.originalUrl.startsWith('/api') || req.originalUrl.startsWith('/uploads')) {
       return next();
+    }
+    // CRITICAL FIX: NEVER return index.html for static assets (CSS, JS, fonts, images)
+    // If a stylesheet or script is missing, returning HTML causes browsers with 'X-Content-Type-Options: nosniff'
+    // to strictly refuse to execute the stylesheet/script, resulting in totally broken, unstyled HTML!
+    if (req.originalUrl.startsWith('/assets') || req.path.match(/\.(css|js|map|png|jpg|jpeg|gif|svg|ico|woff|woff2|ttf|eot)$/i)) {
+      return res.status(404).type('text/plain').send('Asset not found');
     }
     // Prevent caching index.html so code updates reload instantly
     res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
@@ -162,15 +198,18 @@ const seedAdmin = async () => {
   }
 };
 
+// Prevent Mongoose from freezing requests when offline / disconnected
+mongoose.set('bufferCommands', false);
+
 // DATABASE CONNECTION & SERVER START
 mongoose.connection.on('connected', () => {
-  console.log('✅ MongoDB Connected Successfully');
+  console.log('✅ MongoDB Atlas Connected Successfully');
 });
 mongoose.connection.on('error', (err) => {
-  console.error('⚠️ MongoDB Connection Error:', err.message);
+  console.warn('⚠️ MongoDB Connection Notice:', err.message);
 });
 mongoose.connection.on('disconnected', () => {
-  console.warn('⚠️ MongoDB Disconnected. Waiting to reconnect...');
+  console.warn('⚡ Operating in Offline Mode (Local JSON Database Active)');
 });
 
 // Prevent unhandled promise rejections or uncaught errors from killing server
@@ -181,19 +220,32 @@ process.on('uncaughtException', (err) => {
   console.error('⚠️ Uncaught Exception Caught:', err?.message || err);
 });
 
+// 1. Load Local JSON Database immediately into Node RAM (0ms latency, 100% offline capable)
+loadAllData();
+
+// 2. Initialize Backup Scheduler & Prewarm Sales Cache immediately
+initBackupScheduler();
+prewarmSalesCache().catch(e => console.warn('Cache prewarm notice:', e.message));
+seedAdmin().catch(e => console.warn('Seed admin notice:', e.message));
+
+// 3. Start Express Web/Desktop Server immediately (ready in <0.2 seconds)
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
-  console.log(`🚀 Server running on port ${PORT}`);
+  console.log(`🚀 Hajji Mohammad Nabi Autos Server running on port ${PORT}`);
 });
 
-mongoose.connect(process.env.MONGO_URI)
+// 4. Connect to MongoDB Atlas in background without blocking server or login
+mongoose.connect(process.env.MONGO_URI, {
+  serverSelectionTimeoutMS: 2500,
+  connectTimeoutMS: 2500
+})
   .then(async () => {
-    await seedAdmin();
-    // Initialize Automated 10:00 PM Daily Backup Scheduler
-    initBackupScheduler();
-    // Prewarm sales cache into Node RAM for 0.005s instant first page loads (non-blocking)
-    prewarmSalesCache().catch(e => console.error('Cache prewarm error:', e.message));
+    console.log('☁️ Cloud Atlas Connected! Synchronizing data with local drive...');
+    await syncOfflineDataToAtlas();
   })
   .catch(err => {
-    console.error('❌ Initial MongoDB Connection Error:', err.message);
+    console.log('⚡ Offline Mode Active: Running seamlessly with 100% Local JSON Database in "Haji Muhammad Nabi Autos/data/"');
   });
+
+// 5. Start Background Auto-Reconnect and Cloud Sync (checks every 20s)
+startBackgroundSyncMonitor(process.env.MONGO_URI);

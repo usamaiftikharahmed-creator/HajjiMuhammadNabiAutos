@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import { createHybridModel } from './hybridModel.js';
 
 const installmentSaleSchema = new mongoose.Schema(
   {
@@ -161,4 +162,5 @@ installmentSaleSchema.index({
   name: 'SaleVehicleTextIdx'
 });
 
-export default mongoose.model('InstallmentSale', installmentSaleSchema);
+const InstallmentSale = mongoose.model('InstallmentSale', installmentSaleSchema);
+export default createHybridModel(InstallmentSale, 'installmentSales');

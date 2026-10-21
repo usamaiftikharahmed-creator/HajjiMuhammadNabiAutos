@@ -134,11 +134,11 @@ namespace HajjiMohammadNabiAutos
 
             string[] candidateBrowsers = new string[]
             {
-                Path.Combine(programFilesX86, "Microsoft", "Edge", "Application", "msedge.exe"),
-                Path.Combine(programFiles, "Microsoft", "Edge", "Application", "msedge.exe"),
+                Path.Combine(localAppData, "Google", "Chrome", "Application", "chrome.exe"),
                 Path.Combine(programFiles, "Google", "Chrome", "Application", "chrome.exe"),
                 Path.Combine(programFilesX86, "Google", "Chrome", "Application", "chrome.exe"),
-                Path.Combine(localAppData, "Google", "Chrome", "Application", "chrome.exe"),
+                Path.Combine(programFiles, "Microsoft", "Edge", "Application", "msedge.exe"),
+                Path.Combine(programFilesX86, "Microsoft", "Edge", "Application", "msedge.exe"),
                 Path.Combine(programFiles, "BraveSoftware", "Brave-Browser", "Application", "brave.exe")
             };
 

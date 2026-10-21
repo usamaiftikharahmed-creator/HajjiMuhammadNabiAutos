@@ -17,8 +17,10 @@ import {
 } from '../services/backupService.js';
 import { protect, authorize } from '../middleware/authMiddleware.js';
 
+import { tempBackupUpload } from '../services/uploadService.js';
+
 const router = express.Router();
-const upload = multer({ dest: 'uploads/temp_backups/' });
+const upload = tempBackupUpload;
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);

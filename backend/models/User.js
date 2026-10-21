@@ -1,5 +1,6 @@
 import mongoose from 'mongoose';
 import bcrypt from 'bcryptjs';
+import { createHybridModel } from './hybridModel.js';
 
 const userSchema = new mongoose.Schema(
   {
@@ -46,4 +47,4 @@ userSchema.index({ role: 1 });
 userSchema.index({ isActive: 1 });
 
 const User = mongoose.model('User', userSchema);
-export default User;
+export default createHybridModel(User, 'users');

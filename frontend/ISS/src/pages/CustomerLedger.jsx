@@ -630,11 +630,24 @@ export default function CustomerLedger() {
                   title={ledgerData.customer.profilePic ? 'Click to view full photo' : 'Tasveer upload karne ke liye camera icon dabayein'}
                 >
                   {ledgerData.customer.profilePic ? (
-                    <img 
-                      src={getFileUrl(ledgerData.customer.profilePic)} 
-                      alt={ledgerData.customer.name}
-                      className="w-full h-full object-cover rounded-2xl" 
-                    />
+                    <>
+                      <img 
+                        src={getFileUrl(ledgerData.customer.profilePic)} 
+                        alt={ledgerData.customer.name}
+                        className="w-full h-full object-cover rounded-2xl" 
+                        onError={(e) => {
+                          e.currentTarget.style.display = 'none';
+                          const fb = e.currentTarget.parentElement?.querySelector('.avatar-fallback');
+                          if (fb) fb.style.display = 'flex';
+                        }}
+                      />
+                      <div className="avatar-fallback hidden flex-col items-center justify-center text-center p-1 w-full h-full">
+                        <span className="text-xl sm:text-2xl font-black text-blue-400">
+                          {getCustomerInitials(ledgerData.customer.name)}
+                        </span>
+                        <span className="text-[9px] text-slate-500 font-medium mt-0.5">No Photo</span>
+                      </div>
+                    </>
                   ) : (
                     <div className="flex flex-col items-center justify-center text-center p-1">
                       <span className="text-xl sm:text-2xl font-black text-blue-400">

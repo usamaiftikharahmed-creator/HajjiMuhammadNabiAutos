@@ -555,13 +555,23 @@ export default function RecoveryManager() {
                       {/* Customer Info */}
                       <td className="p-3.5">
                         <div className="flex items-center gap-2.5">
-                          <div className="w-9 h-9 rounded-xl bg-slate-950 border border-slate-800 overflow-hidden shrink-0 flex items-center justify-center shadow-xs">
+                          <div className="w-9 h-9 rounded-xl bg-slate-950 border border-slate-800 overflow-hidden shrink-0 flex items-center justify-center shadow-xs relative">
                             {item.customerProfilePic ? (
-                              <img 
-                                src={getFileUrl(item.customerProfilePic)} 
-                                alt={item.customerName} 
-                                className="w-full h-full object-cover rounded-xl"
-                              />
+                              <>
+                                <img 
+                                  src={getFileUrl(item.customerProfilePic)} 
+                                  alt={item.customerName} 
+                                  className="w-full h-full object-cover rounded-xl"
+                                  onError={(e) => {
+                                    e.currentTarget.style.display = 'none';
+                                    const fb = e.currentTarget.parentElement?.querySelector('.avatar-fallback');
+                                    if (fb) fb.style.display = 'flex';
+                                  }}
+                                />
+                                <span className="avatar-fallback text-[11px] font-bold text-blue-400 hidden items-center justify-center w-full h-full">
+                                  {getCustomerInitials(item.customerName)}
+                                </span>
+                              </>
                             ) : (
                               <span className="text-[11px] font-bold text-blue-400">
                                 {getCustomerInitials(item.customerName)}

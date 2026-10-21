@@ -203,11 +203,21 @@ export default function ViewDetailsModal({ selectedSale, onClose, onRefresh, onO
                   }
                 >
                   {(selectedSale.profilePic || (typeof selectedSale.customer === 'object' && selectedSale.customer?.profilePic)) ? (
-                    <img 
-                      src={getFileUrl(selectedSale.profilePic || selectedSale.customer.profilePic)} 
-                      alt="Customer" 
-                      className="w-full h-full object-cover rounded-xl"
-                    />
+                    <>
+                      <img 
+                        src={getFileUrl(selectedSale.profilePic || selectedSale.customer.profilePic)} 
+                        alt="Customer" 
+                        className="w-full h-full object-cover rounded-xl"
+                        onError={(e) => {
+                          e.currentTarget.style.display = 'none';
+                          const fb = e.currentTarget.parentElement?.querySelector('.avatar-fallback');
+                          if (fb) fb.style.display = 'flex';
+                        }}
+                      />
+                      <span className="avatar-fallback text-sm font-bold text-blue-400 hidden items-center justify-center w-full h-full">
+                        {getCustomerInitials(getCustomerField(selectedSale.customer, 'name'))}
+                      </span>
+                    </>
                   ) : (
                     <span className="text-sm font-bold text-blue-400">
                       {getCustomerInitials(getCustomerField(selectedSale.customer, 'name'))}

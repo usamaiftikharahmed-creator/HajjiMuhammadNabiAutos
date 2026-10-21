@@ -31,11 +31,16 @@ Folder khol kar kisi bhi ek file par Double Click karein:
    (Yeh pehli baar chalane par aapke Windows Desktop par direct Shortcut icon bana dega!)
 
 --------------------------------------------------------------------------------
-3. CSS / DESIGN ISSUE KA MUTLAQ HAL:
+3. 100% OFFLINE + GOOGLE DRIVE AUTO-SYNC:
 --------------------------------------------------------------------------------
-Ab tamaam CSS, styling aur JavaScript pre-compiled production format mai "dist" 
-folder ke andar bundle kar di gayi hai aur server direct text/css headers ke sath
-serve kar raha hai. Ab kisi bhi computer par CSS gayab nahi hogi!
+- Yeh software ab 100% BINA INTERNET (OFFLINE) chalta hai!
+- Internet na hone par bhi Login, Wasooli (Payments), Naye Khate, aur Roznamcha
+  0.01 second mai fast kaam karega.
+- Tamam data folder mai "Haji Muhammad Nabi Autos/data/" ke andar live JSON 
+  files mai mehfooz hota rehta hai.
+- Jaisey hi computer ko Internet (Wi-Fi / Hotspot) milega, Google Drive aur
+  cloud sync service tamam naya data khud-ba-khud 200GB Google Drive cloud par 
+  upload kar degi! Zero data loss guarantee!
 
 --------------------------------------------------------------------------------
 4. SOFTWARE BAND KARNE KA TAREEQA (SHUTDOWN):

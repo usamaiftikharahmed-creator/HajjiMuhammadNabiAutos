@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import { createHybridModel } from './hybridModel.js';
 
 const customerSchema = new mongoose.Schema(
   {
@@ -75,4 +76,4 @@ customerSchema.index({
 });
 
 const Customer = mongoose.model('Customer', customerSchema);
-export default Customer;
+export default createHybridModel(Customer, 'customers');

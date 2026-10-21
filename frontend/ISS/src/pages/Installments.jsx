@@ -307,13 +307,23 @@ export default function Installments() {
                         </td>
                         <td className="py-3.5 px-4">
                           <div className="flex items-center gap-3">
-                            <div className="w-9 h-9 rounded-xl bg-slate-950 border border-slate-800 overflow-hidden shrink-0 flex items-center justify-center shadow-xs">
+                            <div className="w-9 h-9 rounded-xl bg-slate-950 border border-slate-800 overflow-hidden shrink-0 flex items-center justify-center shadow-xs relative">
                               {(item.profilePic || (typeof item.customer === 'object' && item.customer?.profilePic)) ? (
-                                <img 
-                                  src={getFileUrl(item.profilePic || item.customer.profilePic)} 
-                                  alt="Customer" 
-                                  className="w-full h-full object-cover rounded-xl"
-                                />
+                                <>
+                                  <img 
+                                    src={getFileUrl(item.profilePic || item.customer.profilePic)} 
+                                    alt="Customer" 
+                                    className="w-full h-full object-cover rounded-xl"
+                                    onError={(e) => {
+                                      e.currentTarget.style.display = 'none';
+                                      const fb = e.currentTarget.parentElement?.querySelector('.avatar-fallback');
+                                      if (fb) fb.style.display = 'flex';
+                                    }}
+                                  />
+                                  <span className="avatar-fallback text-[11px] font-bold text-blue-400 hidden items-center justify-center w-full h-full">
+                                    {getCustomerInitials(getCustomerField(item.customer, 'name'))}
+                                  </span>
+                                </>
                               ) : (
                                 <span className="text-[11px] font-bold text-blue-400">
                                   {getCustomerInitials(getCustomerField(item.customer, 'name'))}

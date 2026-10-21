@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import { createHybridModel } from './hybridModel.js';
 
 const paymentSchema = new mongoose.Schema(
   {
@@ -46,4 +47,5 @@ paymentSchema.index({ forMonth: 1 });
 paymentSchema.index({ paymentMethod: 1 });
 paymentSchema.index({ receivedBy: 1 });
 
-export default mongoose.model('Payment', paymentSchema);
+const Payment = mongoose.model('Payment', paymentSchema);
+export default createHybridModel(Payment, 'payments');
