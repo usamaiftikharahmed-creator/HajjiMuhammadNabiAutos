@@ -20,6 +20,11 @@ export const getFileUrl = (url) => {
     return `http://localhost:5000${clean}`;
   }
 
+  // In production on Vercel, direct uploads to live backend
+  if (typeof window !== 'undefined' && window.location.hostname !== 'localhost') {
+    return `https://hajji-muhammad-nabi-autos.vercel.app${clean}`;
+  }
+
   return clean;
 };
 

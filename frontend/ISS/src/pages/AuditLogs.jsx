@@ -5,6 +5,7 @@ import {
   ChevronLeft, ChevronRight, Download, FileText, ArrowRight
 } from 'lucide-react';
 import toast from 'react-hot-toast';
+import { API_BASE_URL } from '../api/axios';
 
 export default function AuditLogs() {
   const [logs, setLogs] = useState([]);
@@ -75,7 +76,7 @@ export default function AuditLogs() {
         ...(endDate && { endDate })
       });
 
-      const res = await fetch(`/api/logs?${params.toString()}`, {
+      const res = await fetch(`${API_BASE_URL}/logs?${params.toString()}`, {
         headers: {
           'Content-Type': 'application/json',
           ...(token && { 'Authorization': `Bearer ${token}` })
@@ -103,7 +104,7 @@ export default function AuditLogs() {
       const userInfo = JSON.parse(localStorage.getItem('userInfo') || '{}');
       const token = userInfo?.token || localStorage.getItem('token');
 
-      const res = await fetch('/api/logs/stats', {
+      const res = await fetch(`${API_BASE_URL}/logs/stats`, {
         headers: {
           'Content-Type': 'application/json',
           ...(token && { 'Authorization': `Bearer ${token}` })

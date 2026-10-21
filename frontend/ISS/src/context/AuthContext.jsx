@@ -15,6 +15,14 @@ export const AuthProvider = ({ children }) => {
 
   const checkAuth = async () => {
     try {
+      const token = localStorage.getItem('token');
+      const userInfo = localStorage.getItem('userInfo');
+      if (!token && !userInfo) {
+        setUser(null);
+        setLoading(false);
+        return;
+      }
+
       const res = await API.get('/auth/me');
       if (res.data?.success && res.data?.user) {
         setUser(res.data.user);

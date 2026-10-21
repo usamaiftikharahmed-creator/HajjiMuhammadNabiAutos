@@ -9,6 +9,7 @@ import DateSelector from '../components/Amountcomponents/DateSelector';
 import CashDrawerSplit from '../components/Amountcomponents/CashDrawerSplit';
 import DayLockBanner from '../components/Amountcomponents/DayLockBanner';
 import MonthlyReportExport from '../components/Amountcomponents/MonthlyReportExport';
+import { API_BASE_URL } from '../api/axios';
 
 export default function DailyCashManager() {
   const getTodayDateStr = () => {
@@ -39,7 +40,7 @@ export default function DailyCashManager() {
       const userInfo = JSON.parse(localStorage.getItem('userInfo') || '{}');
       const token = userInfo?.token || localStorage.getItem('token');
 
-      const res = await fetch(`/api/daily-cash/summary?date=${selectedDate}`, {
+      const res = await fetch(`${API_BASE_URL}/daily-cash/summary?date=${selectedDate}`, {
         headers: {
           'Content-Type': 'application/json',
           ...(token && { 'Authorization': `Bearer ${token}` })
@@ -77,7 +78,7 @@ export default function DailyCashManager() {
       const userInfo = JSON.parse(localStorage.getItem('userInfo') || '{}');
       const token = userInfo?.token || localStorage.getItem('token');
 
-      const res = await fetch('/api/daily-cash/expense', {
+      const res = await fetch(`${API_BASE_URL}/daily-cash/expense`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -120,7 +121,7 @@ export default function DailyCashManager() {
       const userInfo = JSON.parse(localStorage.getItem('userInfo') || '{}');
       const token = userInfo?.token || localStorage.getItem('token');
 
-      const res = await fetch(`/api/daily-cash/expense/${id}`, {
+      const res = await fetch(`${API_BASE_URL}/daily-cash/expense/${id}`, {
         method: 'DELETE',
         headers: { ...(token && { 'Authorization': `Bearer ${token}` }) },
         credentials: 'include'
@@ -145,7 +146,7 @@ export default function DailyCashManager() {
       const userInfo = JSON.parse(localStorage.getItem('userInfo') || '{}');
       const token = userInfo?.token || localStorage.getItem('token');
 
-      const res = await fetch('/api/daily-cash/close-day', {
+      const res = await fetch(`${API_BASE_URL}/daily-cash/close-day`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -182,7 +183,7 @@ export default function DailyCashManager() {
       const userInfo = JSON.parse(localStorage.getItem('userInfo') || '{}');
       const token = userInfo?.token || localStorage.getItem('token');
 
-      const res = await fetch('/api/daily-cash/unlock-day', {
+      const res = await fetch(`${API_BASE_URL}/daily-cash/unlock-day`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

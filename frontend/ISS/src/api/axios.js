@@ -1,7 +1,11 @@
-import axios from 'axios';
+// When running in dev on localhost, use local Vite proxy /api.
+// When deployed (in production), use the live Vercel backend directly.
+export const API_BASE_URL = import.meta.env.DEV 
+  ? '/api' 
+  : (import.meta.env.VITE_API_URL || 'https://hajji-muhammad-nabi-autos.vercel.app/api');
 
 const API = axios.create({
-  baseURL: import.meta.env.VITE_API_URL || '/api',
+  baseURL: API_BASE_URL,
   withCredentials: true
 });
 

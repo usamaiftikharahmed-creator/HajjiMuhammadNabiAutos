@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { FileSpreadsheet, Download, RefreshCw, X } from 'lucide-react';
+import { API_BASE_URL } from '../../api/axios';
 
 export default function MonthlyReportExport({ onClose }) {
   const [selectedMonth, setSelectedMonth] = useState(new Date().toISOString().slice(0, 7)); // YYYY-MM
@@ -12,7 +13,7 @@ export default function MonthlyReportExport({ onClose }) {
       const token = userInfo?.token || localStorage.getItem('token');
 
       // Fetch summary data for selected month
-      const res = await fetch(`/api/daily-cash/summary?date=${selectedMonth}-01`, {
+      const res = await fetch(`${API_BASE_URL}/daily-cash/summary?date=${selectedMonth}-01`, {
         headers: { ...(token && { 'Authorization': `Bearer ${token}` }) }
       });
       const data = await res.json();

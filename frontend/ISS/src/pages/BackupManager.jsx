@@ -6,6 +6,7 @@ import {
   Search, Filter, Calendar, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Layers, SlidersHorizontal
 } from 'lucide-react';
 import toast from 'react-hot-toast';
+import { API_BASE_URL } from '../api/axios';
 
 export default function BackupManager() {
   const [backups, setBackups] = useState([]);
@@ -142,7 +143,7 @@ export default function BackupManager() {
       const userInfo = JSON.parse(localStorage.getItem('userInfo') || '{}');
       const token = userInfo?.token || localStorage.getItem('token');
 
-      const res = await fetch('/api/backup/list', {
+      const res = await fetch(`${API_BASE_URL}/backup/list`, {
         headers: {
           'Content-Type': 'application/json',
           ...(token && { 'Authorization': `Bearer ${token}` })
@@ -179,7 +180,7 @@ export default function BackupManager() {
       const userInfo = JSON.parse(localStorage.getItem('userInfo') || '{}');
       const token = userInfo?.token || localStorage.getItem('token');
 
-      const res = await fetch('/api/backup/create', {
+      const res = await fetch(`${API_BASE_URL}/backup/create`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -208,7 +209,7 @@ export default function BackupManager() {
       const userInfo = JSON.parse(localStorage.getItem('userInfo') || '{}');
       const token = userInfo?.token || localStorage.getItem('token');
 
-      const res = await fetch('/api/backup/sync-live-json', {
+      const res = await fetch(`${API_BASE_URL}/backup/sync-live-json`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -238,7 +239,7 @@ export default function BackupManager() {
       const userInfo = JSON.parse(localStorage.getItem('userInfo') || '{}');
       const token = userInfo?.token || localStorage.getItem('token');
 
-      const res = await fetch('/api/backup/settings', {
+      const res = await fetch(`${API_BASE_URL}/backup/settings`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -279,7 +280,7 @@ export default function BackupManager() {
       const token = userInfo?.token || localStorage.getItem('token');
 
       // First verify admin password
-      const verifyRes = await fetch('/api/auth/verify-admin', {
+      const verifyRes = await fetch(`${API_BASE_URL}/auth/verify-admin`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -297,7 +298,7 @@ export default function BackupManager() {
       }
 
       // Execute 1-Click Restore
-      const res = await fetch('/api/backup/restore', {
+      const res = await fetch(`${API_BASE_URL}/backup/restore`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -343,7 +344,7 @@ export default function BackupManager() {
       const formData = new FormData();
       formData.append('backupFile', uploadedFile);
 
-      const res = await fetch('/api/backup/upload-restore', {
+      const res = await fetch(`${API_BASE_URL}/backup/upload-restore`, {
         method: 'POST',
         headers: {
           ...(token && { 'Authorization': `Bearer ${token}` })
@@ -374,7 +375,7 @@ export default function BackupManager() {
       const userInfo = JSON.parse(localStorage.getItem('userInfo') || '{}');
       const token = userInfo?.token || localStorage.getItem('token');
 
-      const res = await fetch(`/api/backup/${folderDate}/${fileName}`, {
+      const res = await fetch(`${API_BASE_URL}/backup/${folderDate}/${fileName}`, {
         method: 'DELETE',
         headers: {
           ...(token && { 'Authorization': `Bearer ${token}` })
