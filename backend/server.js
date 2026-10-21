@@ -89,14 +89,26 @@ getUploadDirs().forEach(dir => {
 // 2. RATE LIMITER (Must be before routes)
 const limiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 1000 });
 app.use('/api', limiter);
+app.use('/auth', limiter);
 
-// 3. API ROUTES
+// 3. API ROUTES (Mounted with both /api prefix and direct alias for 100% compatibility)
 app.use('/api/auth', authRoutes);
+app.use('/auth', authRoutes);
+
 app.use('/api/installments', installmentRoutes);
+app.use('/installments', installmentRoutes);
+
 app.use('/api/daily-cash', dailyCashRoutes);
+app.use('/daily-cash', dailyCashRoutes);
+
 app.use('/api/dashboard', dashboardRoutes);
+app.use('/dashboard-api', dashboardRoutes);
+
 app.use('/api/logs', logRoutes);
+app.use('/logs', logRoutes);
+
 app.use('/api/backup', backupRoutes);
+app.use('/backup', backupRoutes);
 
 app.get('/api/system-status', (req, res) => {
   const isOnline = mongoose.connection.readyState === 1;
