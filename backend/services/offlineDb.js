@@ -236,6 +236,7 @@ export const wrapDoc = (doc, colName) => {
 
   clone._id = {
     toString: () => idStr,
+    toJSON: () => idStr,
     equals: (other) => idStr === String(other?._id || other),
     valueOf: () => idStr,
     [Symbol.toPrimitive]: () => idStr

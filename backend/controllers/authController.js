@@ -5,7 +5,8 @@ import { logActivity } from '../utils/logger.js';
 const JWT_SECRET = process.env.JWT_SECRET || 'hajji_mohammad_nabi_autos_secret_key_2026_secure';
 
 const generateToken = (id) => {
-  return jwt.sign({ id }, JWT_SECRET, { expiresIn: '12h' });
+  const cleanId = String(id?._id || id?.id || (typeof id === 'object' && id?.toString ? id.toString() : id));
+  return jwt.sign({ id: cleanId }, JWT_SECRET, { expiresIn: '12h' });
 };
 
 export const registerUser = async (req, res) => {
@@ -66,7 +67,8 @@ export const loginUser = async (req, res) => {
         return res.status(403).json({ success: false, message: 'Your account is disabled. Contact Owner.' });
       }
 
-      const token = generateToken(user._id);
+      const userIdStr = String(user._id?.toString ? user._id.toString() : user._id);
+      const token = generateToken(userIdStr);
 
       res.cookie('jwt', token, {
         httpOnly: true,
@@ -86,7 +88,7 @@ export const loginUser = async (req, res) => {
       res.json({
         success: true,
         user: {
-          id: user._id,
+          id: userIdStr,
           name: user.name,
           username: user.username,
           role: user.role
