@@ -577,11 +577,12 @@ export const uploadCustomerPhoto = async (req, res) => {
   }
 };
 
-// 5b. Update Installment Sale Details (Strictly locks itemName, totalAmount, advancePayment)
+// 5b. Update Installment Sale Details (All fields fully editable by admin)
 export const updateSaleDetails = async (req, res) => {
   try {
     const { id } = req.params;
     const { 
+      itemName, totalAmount, advancePayment,
       itemRegNumber, registrationNumber, modelYear, engineNumber, chassisNumber, monthlyAmount, dueDateDay, totalMonths, promiseMonth, promisedMonths,
       status, remarks, guarantorName, guarantorPhone, guarantor2Name, guarantor2Phone 
     } = req.body;
@@ -589,6 +590,51 @@ export const updateSaleDetails = async (req, res) => {
     const sale = await InstallmentSale.findById(id);
     if (!sale) {
       return res.status(404).json({ success: false, message: 'Installment sale not found' });
+    }
+
+    if (itemName !== undefined && itemName.trim()) {
+      sale.itemName = itemName.trim();
+    }
+
+    let hasPriceOrAdvanceChange = false;
+
+    if (advancePayment !== undefined && !isNaN(Number(advancePayment))) {
+      const newAdv = Number(advancePayment);
+      if (newAdv !== sale.advancePayment) {
+        sale.advancePayment = newAdv;
+        hasPriceOrAdvanceChange = true;
+
+        const advPayment = await Payment.findOne({
+          installmentSale: sale._id,
+          forMonth: 'Advance Payment'
+        });
+
+        if (advPayment) {
+          if (newAdv > 0) {
+            advPayment.amountPaid = newAdv;
+            await advPayment.save();
+          } else {
+            await Payment.deleteOne({ _id: advPayment._id });
+          }
+        } else if (newAdv > 0) {
+          await Payment.create({
+            installmentSale: sale._id,
+            customer: sale.customer,
+            amountPaid: newAdv,
+            paymentMethod: 'Cash',
+            forMonth: 'Advance Payment',
+            notes: 'Advance Payment at Booking',
+            createdAt: sale.createdAt || new Date()
+          });
+        }
+      }
+    }
+
+    if (totalAmount !== undefined && !isNaN(Number(totalAmount)) && Number(totalAmount) > 0) {
+      if (Number(totalAmount) !== sale.totalAmount) {
+        sale.totalAmount = Number(totalAmount);
+        hasPriceOrAdvanceChange = true;
+      }
     }
 
     // Editable fields
@@ -613,7 +659,29 @@ export const updateSaleDetails = async (req, res) => {
     if (guarantor2Name !== undefined) sale.guarantor2Name = guarantor2Name.trim();
     if (guarantor2Phone !== undefined) sale.guarantor2Phone = guarantor2Phone.trim();
 
+    // Recalculate remainingBalance accurately if total or advance changed
+    if (hasPriceOrAdvanceChange) {
+      const allPayments = await Payment.find({ installmentSale: sale._id });
+      const totalPaidAllTime = allPayments.reduce((sum, p) => sum + (Number(p.amountPaid) || 0), 0);
+      sale.remainingBalance = Math.max(0, sale.totalAmount - totalPaidAllTime);
+      if (sale.remainingBalance === 0) {
+        sale.status = 'completed';
+      } else if (sale.status === 'completed' && sale.remainingBalance > 0) {
+        sale.status = 'active';
+      }
+    }
+
     await sale.save();
+
+    await logActivity({
+      req,
+      action: 'UPDATE_SALE',
+      module: 'Installments',
+      details: `Installment Khata update kiya for "${sale.itemName}": Total: Rs. ${sale.totalAmount.toLocaleString()}, Advance: Rs. ${sale.advancePayment.toLocaleString()}, Baqi: Rs. ${sale.remainingBalance.toLocaleString()}`,
+      targetId: sale._id,
+      targetName: sale.itemName,
+      metadata: { itemName: sale.itemName, totalAmount: sale.totalAmount, advancePayment: sale.advancePayment, remainingBalance: sale.remainingBalance }
+    });
 
     invalidateSalesCache();
 

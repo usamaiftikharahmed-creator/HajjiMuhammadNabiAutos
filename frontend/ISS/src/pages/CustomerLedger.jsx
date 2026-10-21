@@ -333,10 +333,12 @@ export default function CustomerLedger() {
         headers: { 'Content-Type': 'multipart/form-data' }
       });
 
-      // 2. If a sale exists, update allowed sale fields
-      // STRICT REQUIREMENT: itemName, totalAmount, advancePayment are NOT sent / NOT changed!
+      // 2. If a sale exists, update all sale fields (Fully editable by admin)
       if (editFormData.saleId) {
         await API.put(`/installments/sales/${editFormData.saleId}`, {
+          itemName: editFormData.itemName,
+          totalAmount: editFormData.totalAmount,
+          advancePayment: editFormData.advancePayment,
           itemRegNumber: editFormData.registrationNumber || editFormData.itemRegNumber,
           registrationNumber: editFormData.registrationNumber || editFormData.itemRegNumber,
           modelYear: editFormData.modelYear,
@@ -1432,59 +1434,44 @@ export default function CustomerLedger() {
                     )}
                   </div>
 
-                  {/* 3 LOCKED (NON-EDITABLE) FIELDS REQUESTED BY USER */}
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 bg-slate-900/60 p-3 rounded-xl border border-slate-800/80">
-                    <div>
-                      <label className="block text-slate-400 mb-1 font-medium flex items-center justify-between">
-                        <span className="flex items-center gap-1">
-                          <Lock className="w-3 h-3 text-amber-400" /> Item Name
-                        </span>
-                        <span className="text-[9px] text-amber-400/80 font-bold uppercase tracking-wider">Locked</span>
-                      </label>
-                      <input
-                        type="text"
-                        disabled
-                        value={editFormData.itemName}
-                        className="w-full bg-slate-950/80 border border-slate-800/60 rounded-xl px-3 py-2 text-slate-400 cursor-not-allowed text-xs font-semibold"
-                        title="Item Name cannot be edited to maintain sales contract integrity"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-slate-400 mb-1 font-medium flex items-center justify-between">
-                        <span className="flex items-center gap-1">
-                          <Lock className="w-3 h-3 text-amber-400" /> Total Payment (Rs.)
-                        </span>
-                        <span className="text-[9px] text-amber-400/80 font-bold uppercase tracking-wider">Locked</span>
-                      </label>
-                      <input
-                        type="text"
-                        disabled
-                        value={`Rs. ${Number(editFormData.totalAmount || 0).toLocaleString()}`}
-                        className="w-full bg-slate-950/80 border border-slate-800/60 rounded-xl px-3 py-2 text-slate-400 cursor-not-allowed text-xs font-mono font-bold"
-                        title="Total Purchase Price cannot be changed once sale is created"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-slate-400 mb-1 font-medium flex items-center justify-between">
-                        <span className="flex items-center gap-1">
-                          <Lock className="w-3 h-3 text-amber-400" /> Advance Payment (Rs.)
-                        </span>
-                        <span className="text-[9px] text-amber-400/80 font-bold uppercase tracking-wider">Locked</span>
-                      </label>
-                      <input
-                        type="text"
-                        disabled
-                        value={`Rs. ${Number(editFormData.advancePayment || 0).toLocaleString()}`}
-                        className="w-full bg-slate-950/80 border border-slate-800/60 rounded-xl px-3 py-2 text-slate-400 cursor-not-allowed text-xs font-mono"
-                        title="Advance Payment amount cannot be changed"
-                      />
-                    </div>
-                  </div>
-
-                  {/* EDITABLE SALE FIELDS */}
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5 pt-1">
+                    <div>
+                      <label className="block text-slate-300 mb-1 font-medium">Item Name *</label>
+                      <input
+                        type="text"
+                        required
+                        value={editFormData.itemName}
+                        onChange={(e) => setEditFormData({ ...editFormData, itemName: e.target.value })}
+                        placeholder="e.g. SAZGAR / Honda CD 70"
+                        className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3.5 py-2 text-white outline-none focus:border-amber-500 text-xs font-semibold"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-slate-300 mb-1 font-medium">Total Amount (Rs.) *</label>
+                      <input
+                        type="number"
+                        min="1"
+                        required
+                        value={editFormData.totalAmount}
+                        onChange={(e) => setEditFormData({ ...editFormData, totalAmount: e.target.value })}
+                        placeholder="e.g. 420000"
+                        className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3.5 py-2 text-white outline-none focus:border-amber-500 text-xs font-mono font-bold"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-slate-300 mb-1 font-medium">Advance Payment (Rs.)</label>
+                      <input
+                        type="number"
+                        min="0"
+                        value={editFormData.advancePayment}
+                        onChange={(e) => setEditFormData({ ...editFormData, advancePayment: e.target.value })}
+                        placeholder="0"
+                        className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3.5 py-2 text-white outline-none focus:border-amber-500 text-xs font-mono font-bold"
+                      />
+                    </div>
+
                     <div>
                       <label className="block text-slate-300 mb-1 font-medium">Registration No</label>
                       <input
