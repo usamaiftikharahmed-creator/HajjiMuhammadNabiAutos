@@ -492,8 +492,11 @@ export default function AddInstallmentModal({ onClose, onSuccess }) {
               <Plus className="w-5 h-5" />
             </div>
             <div>
-              <h2 className="text-base sm:text-lg font-bold text-white">Create Installment Sale</h2>
-              <p className="text-xs text-slate-400">Customer profile, item details & installment plan</p>
+              <h2 className="text-base sm:text-lg font-bold text-white flex items-center gap-2 flex-wrap">
+                <span>Create Installment Sale</span>
+                <span className="text-blue-300 font-semibold text-sm">/ نیا اقساط کھاتہ درج کریں</span>
+              </h2>
+              <p className="text-xs text-slate-400">Customer profile, item details & installment plan / گاہک کی معلومات، سامان اور اقساط کا پلان</p>
             </div>
           </div>
           <button 
@@ -510,7 +513,7 @@ export default function AddInstallmentModal({ onClose, onSuccess }) {
           {/* 1. CUSTOMER INFORMATION */}
           <div className="space-y-4 bg-slate-950 p-4 sm:p-5 rounded-2xl border border-slate-800">
             <h3 className="text-xs font-bold text-blue-400 uppercase tracking-wider flex items-center gap-1.5 border-b border-slate-800 pb-2.5">
-              <UserCheck className="w-4 h-4" /> Customer Information
+              <UserCheck className="w-4 h-4" /> Customer Information / گاہک کی بنیادی معلومات
             </h3>
 
             {/* Customer Profile Picture Uploader with Live Preview */}
@@ -526,7 +529,7 @@ export default function AddInstallmentModal({ onClose, onSuccess }) {
                   ) : (
                     <div className="flex flex-col items-center justify-center text-slate-500 p-2 text-center">
                       <User className="w-8 h-8 text-slate-600 mb-1" />
-                      <span className="text-[10px] leading-tight font-medium text-slate-400">Tasveer / Photo</span>
+                      <span className="text-[10px] leading-tight font-medium text-slate-400">Tasveer / Photo / تصویر</span>
                     </div>
                   )}
                 </div>
@@ -545,7 +548,7 @@ export default function AddInstallmentModal({ onClose, onSuccess }) {
               <div className="flex-1 space-y-1.5 text-center sm:text-left">
                 <div className="flex items-center justify-center sm:justify-start gap-2">
                   <span className="text-xs font-bold text-white flex items-center gap-1.5">
-                    <Camera className="w-4 h-4 text-blue-400" /> Customer Profile Picture / Photo
+                    <Camera className="w-4 h-4 text-blue-400" /> Customer Profile Picture / گاہک کی تصویر
                   </span>
                   <span className="text-[10px] bg-blue-500/10 text-blue-400 px-2 py-0.5 rounded-full border border-blue-500/20 font-medium">
                     Profile Photo
@@ -557,7 +560,7 @@ export default function AddInstallmentModal({ onClose, onSuccess }) {
                 <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2 pt-1">
                   <label className="cursor-pointer bg-blue-600 hover:bg-blue-500 text-white font-medium px-3.5 py-1.5 rounded-xl text-xs flex items-center gap-1.5 transition shadow-sm">
                     <Upload className="w-3.5 h-3.5" />
-                    <span>{files.profilePic ? 'Tasveer Tabdeel Karein' : 'Select Customer Photo'}</span>
+                    <span>{files.profilePic ? 'Tasveer Tabdeel Karein / تصویر بدلیں' : 'Select Customer Photo / تصویر منتخب کریں'}</span>
                     <input 
                       type="file" 
                       accept="image/*" 
@@ -576,14 +579,14 @@ export default function AddInstallmentModal({ onClose, onSuccess }) {
             
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5 pt-1">
               <div>
-                <label className="block text-slate-300 mb-1 font-medium">Customer Name *</label>
+                <label className="block text-slate-300 mb-1 font-medium">Customer Name / گاہک کا نام *</label>
                 <input
                   type="text"
                   required
                   name="customerName"
                   value={formData.customerName}
                   onChange={handleInputChange}
-                  placeholder="e.g. Manzoor"
+                  placeholder="e.g. Manzoor / نام لکھیں"
                   className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3.5 py-2 text-white outline-none focus:border-blue-500 text-xs"
                 />
               </div>
@@ -591,7 +594,7 @@ export default function AddInstallmentModal({ onClose, onSuccess }) {
               {/* Phone 1 with 11-digit strict validation & live indicator */}
               <div>
                 <div className="flex justify-between items-center mb-1">
-                  <label className="text-slate-300 font-medium">Phone Number 1 *</label>
+                  <label className="text-slate-300 font-medium">Phone Number 1 / موبائل نمبر ۱ *</label>
                   {formData.phone1.length === 11 ? (
                     <span className="text-[10px] font-mono text-emerald-400 font-bold bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/20 flex items-center gap-1">
                       <CheckCircle2 className="w-2.5 h-2.5" /> 11/11 OK
@@ -633,7 +636,7 @@ export default function AddInstallmentModal({ onClose, onSuccess }) {
               {/* Phone 2 with 11-digit strict validation */}
               <div>
                 <div className="flex justify-between items-center mb-1">
-                  <label className="text-slate-300 font-medium">Phone Number 2 (Optional)</label>
+                  <label className="text-slate-300 font-medium">Phone Number 2 / فون ۲ <span className="text-slate-400 font-normal">(Optional / اختیاری)</span></label>
                   {formData.phone2.length === 11 ? (
                     <span className="text-[10px] font-mono text-emerald-400 font-bold bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/20 flex items-center gap-1">
                       <CheckCircle2 className="w-2.5 h-2.5" /> 11/11 OK
@@ -672,7 +675,7 @@ export default function AddInstallmentModal({ onClose, onSuccess }) {
               {/* CNIC Number with auto-hyphen (01201-0245126-5) */}
               <div>
                 <div className="flex justify-between items-center mb-1">
-                  <label className="text-slate-300 font-medium">CNIC Number *</label>
+                  <label className="text-slate-300 font-medium">CNIC Number / شناختی کارڈ نمبر *</label>
                   {isCnicComplete ? (
                     <span className="text-[10px] font-mono text-emerald-400 font-bold bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/20 flex items-center gap-1">
                       <CheckCircle2 className="w-2.5 h-2.5" /> 13/13 OK
@@ -712,14 +715,14 @@ export default function AddInstallmentModal({ onClose, onSuccess }) {
               </div>
 
               <div className="sm:col-span-2">
-                <label className="block text-slate-300 mb-1 font-medium">Permanent Address *</label>
+                <label className="block text-slate-300 mb-1 font-medium">Permanent Address / مستقل پتہ *</label>
                 <input
                   type="text"
                   required
                   name="permanentAddress"
                   value={formData.permanentAddress}
                   onChange={handleInputChange}
-                  placeholder="Full House & Mohalla Address"
+                  placeholder="Full House & Mohalla Address / گھر اور محلہ کا مکمل پتہ"
                   className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3.5 py-2 text-white outline-none focus:border-blue-500 text-xs"
                 />
               </div>
@@ -728,7 +731,7 @@ export default function AddInstallmentModal({ onClose, onSuccess }) {
             {/* Customer Documents (CNIC Copies) */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-slate-800/80">
               <div>
-                <label className="block text-slate-400 mb-1">Customer CNIC Front Image *</label>
+                <label className="block text-slate-400 mb-1">Customer CNIC Front Image / شناختی کارڈ سامنے کی تصویر *</label>
                 <input 
                   type="file" 
                   accept="image/*,.pdf" 
@@ -738,7 +741,7 @@ export default function AddInstallmentModal({ onClose, onSuccess }) {
                 />
               </div>
               <div>
-                <label className="block text-slate-400 mb-1">Customer CNIC Back Image *</label>
+                <label className="block text-slate-400 mb-1">Customer CNIC Back Image / شناختی کارڈ پچھلی تصویر *</label>
                 <input 
                   type="file" 
                   accept="image/*,.pdf" 
@@ -752,20 +755,20 @@ export default function AddInstallmentModal({ onClose, onSuccess }) {
 
           {/* 2. ITEM & BI-DIRECTIONAL INSTALLMENT CALCULATION */}
           <div className="space-y-3 bg-slate-950 p-4 sm:p-5 rounded-2xl border border-slate-800">
-            <div className="flex justify-between items-center border-b border-slate-800 pb-2.5">
+            <div className="flex justify-between items-center border-b border-slate-800 pb-2.5 flex-wrap gap-2">
               <h3 className="text-xs font-bold text-amber-400 uppercase tracking-wider flex items-center gap-1.5">
-                <Calculator className="w-4 h-4" /> Item & Installment Plan (Auto-Sync)
+                <Calculator className="w-4 h-4" /> Item & Installment Plan / سامان اور اقساط کا پلان (Auto-Sync)
               </h3>
               <span className="text-[10px] text-amber-400/80 bg-amber-500/10 px-2 py-0.5 rounded-full border border-amber-500/20 font-medium">
-                ⚡ Months ya Kist likhein, doosra khud calculate hoga
+                ⚡ Months ya Kist likhein / مہینے یا قسط لکھیں (خود حساب ہوگا)
               </span>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5 pt-1">
               <div>
                 <label className="block text-slate-300 mb-1 font-medium flex items-center justify-between">
-                  <span>Booking / Sale Date *</span>
-                  <span className="text-[10px] text-amber-400 font-semibold bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/20">Purani / Aaj Ki</span>
+                  <span>Booking / Sale Date / تاریخ بکنگ یا فروخت *</span>
+                  <span className="text-[10px] text-amber-400 font-semibold bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/20">Purani / Aaj Ki (پرانی یا آج کی)</span>
                 </label>
                 <input
                   type="date"
@@ -778,7 +781,7 @@ export default function AddInstallmentModal({ onClose, onSuccess }) {
               </div>
 
               <div>
-                <label className="block text-slate-300 mb-1 font-medium">Item Name *</label>
+                <label className="block text-slate-300 mb-1 font-medium">Item Name / سامان یا گاڑی کا نام *</label>
                 <input
                   type="text"
                   required
@@ -792,7 +795,7 @@ export default function AddInstallmentModal({ onClose, onSuccess }) {
 
               <div>
                 <label className="block text-slate-300 mb-1 font-medium">
-                  Registration No <span className="text-[10px] text-slate-400 font-normal">(Optional)</span>
+                  Registration No / رجسٹریشن نمبر <span className="text-[10px] text-slate-400 font-normal">(Optional / اختیاری)</span>
                 </label>
                 <input
                   type="text"
@@ -806,7 +809,7 @@ export default function AddInstallmentModal({ onClose, onSuccess }) {
 
               <div>
                 <label className="block text-slate-300 mb-1 font-medium">
-                  Model (Year) <span className="text-[10px] text-slate-400 font-normal">(Optional)</span>
+                  Model (Year) / ماڈل سال <span className="text-[10px] text-slate-400 font-normal">(Optional / اختیاری)</span>
                 </label>
                 <input
                   type="text"
@@ -820,7 +823,7 @@ export default function AddInstallmentModal({ onClose, onSuccess }) {
 
               <div>
                 <label className="block text-slate-300 mb-1 font-medium">
-                  Engine Number <span className="text-[10px] text-slate-400 font-normal">(Optional)</span>
+                  Engine Number / انجن نمبر <span className="text-[10px] text-slate-400 font-normal">(Optional / اختیاری)</span>
                 </label>
                 <input
                   type="text"
@@ -834,7 +837,7 @@ export default function AddInstallmentModal({ onClose, onSuccess }) {
 
               <div>
                 <label className="block text-slate-300 mb-1 font-medium">
-                  Chassis Number <span className="text-[10px] text-slate-400 font-normal">(Optional)</span>
+                  Chassis Number / چیسس نمبر <span className="text-[10px] text-slate-400 font-normal">(Optional / اختیاری)</span>
                 </label>
                 <input
                   type="text"
@@ -847,7 +850,7 @@ export default function AddInstallmentModal({ onClose, onSuccess }) {
               </div>
 
               <div>
-                <label className="block text-slate-300 mb-1 font-medium">Total Amount (Rs.) *</label>
+                <label className="block text-slate-300 mb-1 font-medium">Total Amount / کل رقم (روپے) *</label>
                 <input
                   type="number"
                   required
@@ -862,7 +865,7 @@ export default function AddInstallmentModal({ onClose, onSuccess }) {
 
               {/* Total Advance Agreed */}
               <div>
-                <label className="block text-slate-300 mb-1 font-medium">Total Advance Agreed (Rs.)</label>
+                <label className="block text-slate-300 mb-1 font-medium">Total Advance Agreed / طے شدہ کل ایڈوانس (روپے)</label>
                 <input
                   type="number"
                   min="0"
@@ -877,10 +880,10 @@ export default function AddInstallmentModal({ onClose, onSuccess }) {
               {/* Pay Right Now (Cash / Online received at booking) */}
               <div>
                 <label className="block text-slate-300 mb-1 font-medium flex items-center justify-between">
-                  <span>Pay Right Now (Rs.)</span>
+                  <span>Pay Right Now / ابھی ادا کردہ رقم (روپے)</span>
                   {isPartialAdvance && (
                     <span className="text-[10px] text-amber-400 font-semibold bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/20">
-                      Partial Advance
+                      Partial / جزوی ایڈوانس
                     </span>
                   )}
                 </label>
@@ -901,7 +904,7 @@ export default function AddInstallmentModal({ onClose, onSuccess }) {
 
               {/* Remaining Financed Balance */}
               <div>
-                <label className="block text-slate-400 mb-1 font-medium">Remaining Financed Balance</label>
+                <label className="block text-slate-400 mb-1 font-medium">Remaining Financed Balance / باقی اقساط کی رقم</label>
                 <div className="w-full bg-slate-900/80 border border-slate-800 rounded-xl px-3.5 py-2 font-black text-amber-400 font-mono text-sm">
                   Rs. {remainingBalance.toLocaleString()}
                 </div>
@@ -912,15 +915,15 @@ export default function AddInstallmentModal({ onClose, onSuccess }) {
                 <div className="col-span-1 sm:col-span-2 lg:col-span-3 bg-gradient-to-r from-amber-950/30 via-slate-900 to-amber-950/20 border border-amber-500/40 rounded-2xl p-3.5 my-0.5 shadow-lg">
                   <div className="flex items-center gap-2 mb-2.5">
                     <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse"></span>
-                    <h4 className="text-xs font-bold text-amber-300 uppercase tracking-wide flex items-center gap-1.5">
-                      <span>Baqi Advance ki Tafseelat</span>
-                      <span className="text-[10px] font-normal text-slate-400 capitalize">(Customer ne advance split karwaya hai)</span>
+                    <h4 className="text-xs font-bold text-amber-300 uppercase tracking-wide flex items-center gap-1.5 flex-wrap">
+                      <span>Baqi Advance ki Tafseelat / باقی ایڈوانس کی تفصیلات</span>
+                      <span className="text-[10px] font-normal text-slate-400 capitalize">(Customer baad me baqi advance dega / بعد میں ادا کرے گا)</span>
                     </h4>
                   </div>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
                     <div>
                       <label className="block text-slate-300 mb-1 font-medium text-xs flex justify-between">
-                        <span>Remaining Advance (Baqi Advance)</span>
+                        <span>Remaining Advance / باقی ایڈوانس رقم</span>
                         <span className="text-[10px] font-mono font-bold text-amber-400 bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/20">
                           Baqi Raqam
                         </span>
@@ -931,7 +934,7 @@ export default function AddInstallmentModal({ onClose, onSuccess }) {
                     </div>
                     <div>
                       <label className="block text-slate-300 mb-1 font-medium text-xs flex items-center justify-between">
-                        <span>Remaining Advance Promise Date *</span>
+                        <span>Remaining Advance Promise Date / باقی ایڈوانس کی وعدہ تاریخ *</span>
                         <span className="text-[10px] text-amber-400 font-mono font-bold">Wada Tareekh</span>
                       </label>
                       <input
@@ -950,7 +953,7 @@ export default function AddInstallmentModal({ onClose, onSuccess }) {
               {/* Monthly Kist Input (Syncs Total Months) */}
               <div>
                 <div className="flex justify-between items-center mb-1">
-                  <label className="text-slate-300 font-medium">Monthly Installment (Rs.) *</label>
+                  <label className="text-slate-300 font-medium">Monthly Installment / ماہانہ قسط (روپے) *</label>
                   {calculationSource === 'totalMonths' && formData.monthlyKist && (
                     <span className="text-[10px] text-amber-400 font-mono">⚡ Auto-calculated</span>
                   )}
@@ -970,7 +973,7 @@ export default function AddInstallmentModal({ onClose, onSuccess }) {
               {/* Total Months Input (Syncs Monthly Kist) */}
               <div>
                 <div className="flex justify-between items-center mb-1">
-                  <label className="text-slate-300 font-medium">Total Duration (Months) *</label>
+                  <label className="text-slate-300 font-medium">Total Duration (Months) / کل مدت (ماہ) *</label>
                   {calculationSource === 'monthlyKist' && formData.totalMonths && (
                     <span className="text-[10px] text-amber-400 font-mono">⚡ Auto-calculated</span>
                   )}
@@ -991,7 +994,7 @@ export default function AddInstallmentModal({ onClose, onSuccess }) {
               <div>
                 <div className="flex justify-between items-center mb-1">
                   <label className="text-slate-300 font-medium">
-                    Promise Month <span className="text-[10px] text-amber-400 font-bold">(Invoices Priority ⭐)</span>
+                    Promise Month / وعدہ مہینہ <span className="text-[10px] text-amber-400 font-bold">(Invoices Priority ⭐ / رسیدوں پر ترجیح)</span>
                   </label>
                   {formData.promiseMonth && (
                     <span className="text-[10px] text-amber-400 font-mono font-bold bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/30">
@@ -1009,7 +1012,7 @@ export default function AddInstallmentModal({ onClose, onSuccess }) {
                     className="w-full bg-slate-900 border border-amber-500/50 rounded-xl pl-3.5 pr-10 py-2 text-white outline-none focus:border-amber-400 text-xs font-mono font-bold"
                   />
                   <label 
-                    title="Calendar se Mahina aur Saal chunein"
+                    title="Calendar se Mahina aur Saal chunein / کیلنڈر سے مہینہ اور سال منتخب کریں"
                     className="absolute right-2.5 flex items-center justify-center cursor-pointer text-slate-400 hover:text-amber-400 transition"
                   >
                     <Calendar className="w-4 h-4 pointer-events-none" />
@@ -1030,7 +1033,7 @@ export default function AddInstallmentModal({ onClose, onSuccess }) {
               </div>
 
               <div>
-                <label className="block text-slate-300 mb-1 font-medium">Due Date Day (Monthly)</label>
+                <label className="block text-slate-300 mb-1 font-medium">Due Date Day / ماہانہ تاریخ قسط (1 تا 31)</label>
                 <input
                   type="number"
                   min="1"
@@ -1044,17 +1047,17 @@ export default function AddInstallmentModal({ onClose, onSuccess }) {
               </div>
 
               <div>
-                <label className="block text-slate-300 mb-1 font-medium">Payment Mode (Advance)</label>
+                <label className="block text-slate-300 mb-1 font-medium">Payment Mode (Advance) / ادائیگی کا طریقہ (ایڈوانس)</label>
                 <select
                   name="paymentMode"
                   value={formData.paymentMode}
                   onChange={handleInputChange}
                   className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3.5 py-2 text-white outline-none focus:border-amber-500 text-xs cursor-pointer"
                 >
-                  <option value="Cash">Cash (Counter Gullay)</option>
-                  <option value="Bank Transfer">Bank Transfer (Raast / IBFT)</option>
-                  <option value="EasyPaisa">EasyPaisa</option>
-                  <option value="JazzCash">JazzCash</option>
+                  <option value="Cash">Cash (Counter Gullay / کاؤنٹر کیش)</option>
+                  <option value="Bank Transfer">Bank Transfer (بینک ٹرانسفر / راست IBFT)</option>
+                  <option value="EasyPaisa">EasyPaisa (ایزی پیسہ)</option>
+                  <option value="JazzCash">JazzCash (جاز کیش)</option>
                 </select>
               </div>
             </div>
@@ -1063,18 +1066,18 @@ export default function AddInstallmentModal({ onClose, onSuccess }) {
           {/* 3. GUARANTORS INFORMATION */}
           <div className="space-y-3 bg-slate-950 p-4 sm:p-5 rounded-2xl border border-slate-800">
             <h3 className="text-xs font-bold text-emerald-400 uppercase tracking-wider flex items-center gap-1.5 border-b border-slate-800 pb-2.5">
-              <ShieldCheck className="w-4 h-4" /> Guarantors Information (Zameen)
+              <ShieldCheck className="w-4 h-4" /> Guarantors Information / ضامنین کی معلومات (ضمانت)
             </h3>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 pt-1">
               <div>
-                <label className="block text-slate-300 mb-1">Guarantor 1 Name *</label>
+                <label className="block text-slate-300 mb-1">Guarantor 1 Name / ضامن ۱ کا نام *</label>
                 <input 
                   type="text" 
                   name="guarantor1Name" 
                   value={formData.guarantor1Name} 
                   onChange={handleInputChange} 
-                  placeholder="Guarantor 1 Full Name" 
+                  placeholder="Guarantor 1 Full Name / نام لکھیں" 
                   className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3.5 py-2 text-white outline-none focus:border-emerald-500 text-xs" 
                 />
               </div>
@@ -1082,7 +1085,7 @@ export default function AddInstallmentModal({ onClose, onSuccess }) {
               {/* Guarantor 1 Phone with 11-digit strict validation */}
               <div>
                 <div className="flex justify-between items-center mb-1">
-                  <label className="text-slate-300">Guarantor 1 Phone *</label>
+                  <label className="text-slate-300">Guarantor 1 Phone / ضامن ۱ کا موبائل نمبر *</label>
                   {formData.guarantor1Phone.length === 11 ? (
                     <span className="text-[10px] font-mono text-emerald-400 font-bold bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/20 flex items-center gap-1">
                       <CheckCircle2 className="w-2.5 h-2.5" /> 11/11 OK
@@ -1119,23 +1122,23 @@ export default function AddInstallmentModal({ onClose, onSuccess }) {
               </div>
 
               <div>
-                <label className="block text-slate-400 mb-1">Guarantor 1 CNIC Front *</label>
+                <label className="block text-slate-400 mb-1">Guarantor 1 CNIC Front / ضامن ۱ شناختی کارڈ سامنے *</label>
                 <input type="file" accept="image/*,.pdf" name="guarantor1CnicFront" onChange={handleFileChange} className="w-full bg-slate-900 border border-slate-800 rounded-xl p-1 text-slate-300 text-xs file:mr-2 file:py-1 file:px-2 file:rounded-lg file:border-0 file:text-[11px] file:bg-slate-800 file:text-slate-300" />
               </div>
 
               <div>
-                <label className="block text-slate-400 mb-1">Guarantor 1 CNIC Back *</label>
+                <label className="block text-slate-400 mb-1">Guarantor 1 CNIC Back / ضامن ۱ شناختی کارڈ بیک *</label>
                 <input type="file" accept="image/*,.pdf" name="guarantor1CnicBack" onChange={handleFileChange} className="w-full bg-slate-900 border border-slate-800 rounded-xl p-1 text-slate-300 text-xs file:mr-2 file:py-1 file:px-2 file:rounded-lg file:border-0 file:text-[11px] file:bg-slate-800 file:text-slate-300" />
               </div>
 
               <div>
-                <label className="block text-slate-300 mb-1">Guarantor 2 Name (Optional)</label>
+                <label className="block text-slate-300 mb-1">Guarantor 2 Name / ضامن ۲ کا نام <span className="text-[10px] text-slate-400 font-normal">(Optional / اختیاری)</span></label>
                 <input 
                   type="text" 
                   name="guarantor2Name" 
                   value={formData.guarantor2Name} 
                   onChange={handleInputChange} 
-                  placeholder="Guarantor 2 Full Name" 
+                  placeholder="Guarantor 2 Full Name / نام لکھیں" 
                   className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3.5 py-2 text-white outline-none focus:border-emerald-500 text-xs" 
                 />
               </div>
@@ -1143,7 +1146,7 @@ export default function AddInstallmentModal({ onClose, onSuccess }) {
               {/* Guarantor 2 Phone with 11-digit strict validation */}
               <div>
                 <div className="flex justify-between items-center mb-1">
-                  <label className="text-slate-300">Guarantor 2 Phone (Optional)</label>
+                  <label className="text-slate-300">Guarantor 2 Phone / ضامن ۲ کا فون <span className="text-[10px] text-slate-400 font-normal">(Optional / اختیاری)</span></label>
                   {formData.guarantor2Phone.length === 11 ? (
                     <span className="text-[10px] font-mono text-emerald-400 font-bold bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/20 flex items-center gap-1">
                       <CheckCircle2 className="w-2.5 h-2.5" /> 11/11 OK
@@ -1183,28 +1186,28 @@ export default function AddInstallmentModal({ onClose, onSuccess }) {
 
           {/* 4. EXTRA ATTACHMENT DOCUMENTS */}
           <div className="space-y-3 bg-slate-950 p-4 sm:p-5 rounded-2xl border border-slate-800">
-            <div className="flex justify-between items-center border-b border-slate-800 pb-2.5">
+            <div className="flex justify-between items-center border-b border-slate-800 pb-2.5 flex-wrap gap-2">
               <h3 className="text-xs font-bold text-purple-400 uppercase tracking-wider flex items-center gap-1.5">
-                <FileText className="w-4 h-4" /> Additional Item / Agreement Documents
+                <FileText className="w-4 h-4" /> Additional Item / Agreement Documents / اضافی دستاویزات و معاہدہ
               </h3>
               <button
                 type="button"
                 onClick={handleAddExtraDoc}
                 className="bg-purple-600/20 hover:bg-purple-600/30 text-purple-300 border border-purple-500/30 px-3 py-1 rounded-xl text-xs font-semibold flex items-center gap-1 transition cursor-pointer"
               >
-                <Plus className="w-3.5 h-3.5" /> Add Document
+                <Plus className="w-3.5 h-3.5" /> Add Document / فائل شامل کریں
               </button>
             </div>
 
             {extraDocs.length === 0 ? (
-              <p className="text-slate-500 italic text-[11px] py-1">No extra attachment documents added yet.</p>
+              <p className="text-slate-500 italic text-[11px] py-1">No extra attachment documents added yet / کوئی اضافی دستاویز شامل نہیں ہے۔</p>
             ) : (
               <div className="space-y-2.5">
                 {extraDocs.map((doc, idx) => (
                   <div key={idx} className="flex flex-col sm:flex-row items-center gap-2 bg-slate-900 p-2.5 rounded-xl border border-slate-800">
                     <input
                       type="text"
-                      placeholder="Doc Title (e.g. Agreement, Electricity Bill)"
+                      placeholder="Doc Title (e.g. Agreement, Electricity Bill / فائل کا عنوان)"
                       value={doc.title}
                       onChange={(e) => handleExtraDocChange(idx, 'title', e.target.value)}
                       className="flex-1 bg-slate-950 border border-slate-800 rounded-lg px-3 py-1.5 text-white outline-none text-xs"
@@ -1236,7 +1239,7 @@ export default function AddInstallmentModal({ onClose, onSuccess }) {
               onClick={onClose}
               className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl font-medium transition cursor-pointer text-xs"
             >
-              Cancel
+              Cancel / منسوخ
             </button>
             <button
               type="submit"
@@ -1245,11 +1248,11 @@ export default function AddInstallmentModal({ onClose, onSuccess }) {
             >
               {loading ? (
                 <>
-                  <RefreshCw className="w-4 h-4 animate-spin" /> Creating Account...
+                  <RefreshCw className="w-4 h-4 animate-spin" /> Creating Account / کھاتہ بن رہا ہے...
                 </>
               ) : (
                 <>
-                  <Plus className="w-4 h-4" /> Create Installment Account
+                  <Plus className="w-4 h-4" /> Create Installment Account / نیا اقساط کھاتہ کھولیں
                 </>
               )}
             </button>

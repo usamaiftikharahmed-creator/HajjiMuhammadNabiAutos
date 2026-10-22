@@ -300,7 +300,10 @@ export default function PayKistModal({ sale, selectedSale, onClose, onSuccess })
               <DollarSign className="w-5 h-5" />
             </div>
             <div>
-              <h3 className="text-base font-bold text-white">Receive Installment Payment</h3>
+              <h3 className="text-base font-bold text-white flex items-center gap-1.5 flex-wrap">
+                <span>Receive Installment Payment</span>
+                <span className="text-emerald-300 font-semibold text-sm">/ قسط وصول کریں</span>
+              </h3>
               <p className="text-xs text-slate-400">{customerName} <span className="font-mono text-blue-400">({customerId})</span></p>
             </div>
           </div>
@@ -383,16 +386,16 @@ export default function PayKistModal({ sale, selectedSale, onClose, onSuccess })
             </div>
           </div>
           <div className="flex justify-between">
-            <span className="text-slate-400">Monthly Target Kist:</span>
+            <span className="text-slate-400">Monthly Target Kist / ماہانہ قسط ہدف:</span>
             <span className="text-blue-400 font-semibold">Rs. {Number(activeSale.monthlyAmount || 0).toLocaleString()}</span>
           </div>
           <div className="flex justify-between">
-            <span className="text-slate-400">Current Outstanding Balance:</span>
+            <span className="text-slate-400">Current Outstanding / موجودہ باقی واجب الادا:</span>
             <span className="text-amber-400 font-bold">Rs. {currentRemaining.toLocaleString()}</span>
           </div>
           {inputAmount > 0 && (
             <div className="flex justify-between pt-1 border-t border-slate-900 text-slate-300">
-              <span className="text-slate-400">Balance After This Payment:</span>
+              <span className="text-slate-400">Balance After Payment / ادائیگی کے بعد باقی:</span>
               <span className="text-emerald-400 font-bold">Rs. {projectedRemaining.toLocaleString()}</span>
             </div>
           )}
@@ -539,14 +542,14 @@ export default function PayKistModal({ sale, selectedSale, onClose, onSuccess })
         <form onSubmit={handleSubmit} className="space-y-3.5 text-xs">
           <div>
             <div className="flex justify-between items-center mb-1">
-              <label className="text-slate-300 font-medium">Amount Received (Rs.) *</label>
+              <label className="text-slate-300 font-medium">Amount Received / وصول کردہ رقم (روپے) *</label>
               {selectedMonthObj?.remainingAmount > 0 && (
                 <button
                   type="button"
                   onClick={() => setAmountPaid(selectedMonthObj.remainingAmount)}
                   className="text-[10px] text-amber-400 hover:text-amber-300 font-bold cursor-pointer"
                 >
-                  ⚡ Set Remaining: Rs. {selectedMonthObj.remainingAmount.toLocaleString()}
+                  ⚡ Set Remaining: Rs. {selectedMonthObj.remainingAmount.toLocaleString()} (باقی رقم)
                 </button>
               )}
             </div>
@@ -564,7 +567,7 @@ export default function PayKistModal({ sale, selectedSale, onClose, onSuccess })
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
-              <label className="block text-slate-300 font-medium mb-1">For Kist Month *</label>
+              <label className="block text-slate-300 font-medium mb-1">For Kist Month / قسط کا مہینہ *</label>
               <select
                 value={forMonth}
                 onChange={(e) => handleSelectMonth(e.target.value)}
@@ -577,22 +580,22 @@ export default function PayKistModal({ sale, selectedSale, onClose, onSuccess })
             </div>
 
             <div>
-              <label className="block text-slate-300 font-medium mb-1">Payment Method Mode *</label>
+              <label className="block text-slate-300 font-medium mb-1">Payment Method / ادائیگی کا طریقہ *</label>
               <select
                 value={paymentMethod}
                 onChange={(e) => setPaymentMethod(e.target.value)}
                 className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-emerald-500 cursor-pointer"
               >
-                <option value="Cash">Cash (Counter Gullay)</option>
-                <option value="Bank Transfer">Bank Transfer (Raast / IBFT)</option>
-                <option value="EasyPaisa">EasyPaisa</option>
-                <option value="JazzCash">JazzCash</option>
+                <option value="Cash">Cash (Counter Gullay / کاؤنٹر کیش)</option>
+                <option value="Bank Transfer">Bank Transfer (بینک ٹرانسفر / راست IBFT)</option>
+                <option value="EasyPaisa">EasyPaisa (ایزی پیسہ)</option>
+                <option value="JazzCash">JazzCash (جاز کیش)</option>
               </select>
             </div>
           </div>
 
           <div>
-            <label className="block text-slate-300 font-medium mb-1">Transaction Ref / ID (Optional)</label>
+            <label className="block text-slate-300 font-medium mb-1">Transaction Ref / ID / ٹرانزیکشن یا رسید نمبر <span className="text-slate-400 font-normal">(Optional / اختیاری)</span></label>
             <input
               type="text"
               value={transactionId}
@@ -603,12 +606,12 @@ export default function PayKistModal({ sale, selectedSale, onClose, onSuccess })
           </div>
 
           <div>
-            <label className="block text-slate-300 font-medium mb-1">Remarks / Notes (Optional)</label>
+            <label className="block text-slate-300 font-medium mb-1">Remarks / Notes / تفصیل یا ریمارکس <span className="text-slate-400 font-normal">(Optional / اختیاری)</span></label>
             <input
               type="text"
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
-              placeholder="e.g. 6000 wasool, 2000 baqi aglay hafte dega"
+              placeholder="e.g. 6000 wasool, 2000 baqi aglay hafte dega / تفصیل لکھیں"
               className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2 text-white focus:outline-none focus:border-emerald-500"
             />
           </div>
@@ -620,10 +623,10 @@ export default function PayKistModal({ sale, selectedSale, onClose, onSuccess })
           >
             {loading ? (
               <>
-                <RefreshCw className="w-4 h-4 animate-spin" /> Saving Payment...
+                <RefreshCw className="w-4 h-4 animate-spin" /> Saving Payment / محفوظ ہو رہا ہے...
               </>
             ) : (
-              'Save & Update Ledger'
+              'Save & Update Ledger / ادائیگی درج کریں اور کھاتہ اپڈیٹ کریں'
             )}
           </button>
         </form>

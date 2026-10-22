@@ -368,16 +368,18 @@ export default function DailyCashManager() {
         
         {/* ADD EXPENSE FORM */}
         <div className={`bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-4 shadow-xl print:hidden ${data?.isClosed ? 'opacity-50 pointer-events-none' : ''}`}>
-          <h3 className="text-base font-bold text-white flex items-center gap-2">
-            <Plus className="w-4 h-4 text-rose-400" /> Record Shop Expense
+          <h3 className="text-base font-bold text-white flex items-center gap-2 flex-wrap">
+            <Plus className="w-4 h-4 text-rose-400" />
+            <span>Record Shop Expense</span>
+            <span className="text-rose-300 font-semibold text-sm">/ دکان کا خرچہ درج کریں</span>
           </h3>
 
           <form onSubmit={handleAddExpense} className="space-y-3.5 text-xs">
             <div>
-              <label className="text-slate-400 block mb-1">Expense Title / Reason *</label>
+              <label className="text-slate-400 block mb-1">Expense Title / Reason / خرچے کا عنوان یا وجہ *</label>
               <input
                 type="text"
-                placeholder="e.g. Electricity Bill, Tea/Khana"
+                placeholder="e.g. Electricity Bill, Tea/Khana / بجلی کا بل، چائے کھانا وغیرہ"
                 value={expenseTitle}
                 onChange={(e) => setExpenseTitle(e.target.value)}
                 disabled={data?.isClosed}
@@ -388,7 +390,7 @@ export default function DailyCashManager() {
 
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="text-slate-400 block mb-1">Amount (Rs.) *</label>
+                <label className="text-slate-400 block mb-1">Amount / رقم (روپے) *</label>
                 <input
                   type="number"
                   placeholder="e.g. 500"
@@ -401,32 +403,32 @@ export default function DailyCashManager() {
               </div>
 
               <div>
-                <label className="text-slate-400 block mb-1">Category</label>
+                <label className="text-slate-400 block mb-1">Category / کیٹیگری</label>
                 <select
                   value={expenseCategory}
                   onChange={(e) => setExpenseCategory(e.target.value)}
                   disabled={data?.isClosed}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2.5 text-white focus:outline-none"
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2.5 text-white focus:outline-none cursor-pointer"
                 >
-                  <option value="General">General</option>
-                  <option value="Tea & Refreshment">Tea & Refreshment</option>
-                  <option value="Utility Bills">Utility Bills</option>
-                  <option value="Shop Maintenance">Shop Maintenance</option>
-                  <option value="Salary/Advance">Salary/Advance</option>
-                  <option value="Transport">Transport</option>
+                  <option value="General">General (عام خرچہ)</option>
+                  <option value="Tea & Refreshment">Tea & Refreshment (چائے و کھانا)</option>
+                  <option value="Utility Bills">Utility Bills (یوٹیلیٹی بلز)</option>
+                  <option value="Shop Maintenance">Shop Maintenance (دکان کی دیکھ بھال)</option>
+                  <option value="Salary/Advance">Salary/Advance (تنخواہ یا ایڈوانس)</option>
+                  <option value="Transport">Transport (کرایہ یا پیٹرول)</option>
                 </select>
               </div>
             </div>
 
             {/* PAYMENT MODE SELECTOR (Cash, Bank Transfer, JazzCash, EasyPaisa) */}
             <div>
-              <label className="text-slate-400 block mb-1.5 font-medium">Payment Mode (Adaigi Ka Zariya) *</label>
+              <label className="text-slate-400 block mb-1.5 font-medium">Payment Mode / ادائیگی کا ذریعہ *</label>
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                 {[
-                  { id: 'Cash', label: 'Cash (Gulla)', color: 'emerald' },
-                  { id: 'Bank Transfer', label: 'Bank Transfer', color: 'purple' },
-                  { id: 'JazzCash', label: 'JazzCash', color: 'amber' },
-                  { id: 'EasyPaisa', label: 'EasyPaisa', color: 'teal' }
+                  { id: 'Cash', label: 'Cash (Gulla / گلہ)', color: 'emerald' },
+                  { id: 'Bank Transfer', label: 'Bank (بینک)', color: 'purple' },
+                  { id: 'JazzCash', label: 'JazzCash (جاز کیش)', color: 'amber' },
+                  { id: 'EasyPaisa', label: 'EasyPaisa (ایزی پیسہ)', color: 'teal' }
                 ].map((pm) => {
                   const isSelected = expensePaymentMethod === pm.id;
                   let selectedClass = '';
@@ -462,10 +464,10 @@ export default function DailyCashManager() {
             </div>
 
             <div>
-              <label className="text-slate-400 block mb-1">Notes / Remarks</label>
+              <label className="text-slate-400 block mb-1">Notes / Remarks / تفصیل یا ریمارکس</label>
               <input
                 type="text"
-                placeholder="Details..."
+                placeholder="Details / تفصیل لکھیں..."
                 value={expenseNotes}
                 onChange={(e) => setExpenseNotes(e.target.value)}
                 disabled={data?.isClosed}
@@ -476,9 +478,15 @@ export default function DailyCashManager() {
             <button
               type="submit"
               disabled={addingExpense || data?.isClosed}
-              className="w-full bg-rose-600 hover:bg-rose-500 text-white font-bold py-2.5 rounded-xl transition cursor-pointer flex items-center justify-center gap-2 disabled:opacity-50"
+              className="w-full bg-rose-600 hover:bg-rose-500 text-white font-bold py-2.5 rounded-xl transition cursor-pointer flex items-center justify-center gap-2 disabled:opacity-50 text-xs"
             >
-              {addingExpense ? <RefreshCw className="w-4 h-4 animate-spin" /> : 'Add Expense Entry'}
+              {addingExpense ? (
+                <>
+                  <RefreshCw className="w-4 h-4 animate-spin" /> Adding / درج ہو رہا ہے...
+                </>
+              ) : (
+                'Add Expense Entry / دکان کا خرچہ درج کریں'
+              )}
             </button>
           </form>
         </div>

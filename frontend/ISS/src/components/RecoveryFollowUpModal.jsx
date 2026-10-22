@@ -99,8 +99,10 @@ export default function RecoveryFollowUpModal({ sale, onClose, onSaved }) {
               <span className="font-mono text-[10px] font-bold text-blue-400 bg-blue-500/10 px-2 py-0.5 rounded border border-blue-500/20">
                 {customerId}
               </span>
-              <h3 className="text-base font-bold text-white flex items-center gap-2">
-                <MessageSquare className="w-4 h-4 text-purple-400" /> Recovery Remarks & Promise Register
+              <h3 className="text-base font-bold text-white flex items-center gap-2 flex-wrap">
+                <MessageSquare className="w-4 h-4 text-purple-400" />
+                <span>Recovery Remarks & Promise Register</span>
+                <span className="text-purple-300 font-semibold text-sm">/ کال ریمارکس اور وعدہ رجسٹر</span>
               </h3>
             </div>
             <p className="text-xs text-slate-400 flex flex-wrap items-center gap-1">
@@ -209,53 +211,55 @@ export default function RecoveryFollowUpModal({ sale, onClose, onSaved }) {
 
           {/* SECTION 2: ADD NEW FOLLOW-UP FORM */}
           <form onSubmit={handleSave} className="space-y-4 pt-3 border-t border-slate-800">
-            <h4 className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-1.5">
-              <MessageSquare className="w-3.5 h-3.5 text-emerald-400" /> Record New Follow-up & Promise
+            <h4 className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-1.5 flex-wrap">
+              <MessageSquare className="w-3.5 h-3.5 text-emerald-400" />
+              <span>Record New Follow-up & Promise</span>
+              <span className="text-emerald-300 font-semibold">/ نیا فالو اپ اور وعدہ درج کریں</span>
             </h4>
 
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               {/* Call Status Option */}
               <div className="space-y-1">
                 <label className="text-[11px] font-semibold text-slate-300 flex items-center gap-1">
-                  <Phone className="w-3 h-3 text-emerald-400" /> Call Status:
+                  <Phone className="w-3 h-3 text-emerald-400" /> Call Status / کال کی صورتحال:
                 </label>
                 <select
                   value={callStatus}
                   onChange={(e) => setCallStatus(e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-800 focus:border-purple-500 rounded-xl px-2.5 py-2 text-white focus:outline-none text-xs"
+                  className="w-full bg-slate-950 border border-slate-800 focus:border-purple-500 rounded-xl px-2.5 py-2 text-white focus:outline-none text-xs cursor-pointer"
                 >
-                  <option value="CALLED - PAYMENT PROMISED">CALLED - PAYMENT PROMISED</option>
-                  <option value="PENDING CALL">PENDING CALL</option>
-                  <option value="RESCHEDULED">RESCHEDULED</option>
-                  <option value="PAYMENT RECEIVED">PAYMENT RECEIVED</option>
-                  <option value="NO RESPONSE / NOT REACHABLE">NO RESPONSE / NOT REACHABLE</option>
-                  <option value="CUSTOMER REFUSED">CUSTOMER REFUSED</option>
+                  <option value="CALLED - PAYMENT PROMISED">CALLED - PAYMENT PROMISED (ادائیگی کا وعدہ)</option>
+                  <option value="PENDING CALL">PENDING CALL (کال کرنا باقی ہے)</option>
+                  <option value="RESCHEDULED">RESCHEDULED (دوبارہ وقت دیا گیا)</option>
+                  <option value="PAYMENT RECEIVED">PAYMENT RECEIVED (ادائیگی وصول ہوگئی)</option>
+                  <option value="NO RESPONSE / NOT REACHABLE">NO RESPONSE / NOT REACHABLE (کال بند یا نو رسپانس)</option>
+                  <option value="CUSTOMER REFUSED">CUSTOMER REFUSED (کسٹمر نے انکار کیا)</option>
                 </select>
               </div>
 
               {/* Follow-up Call Date */}
               <div className="space-y-1">
                 <label className="text-[11px] font-semibold text-slate-300 flex items-center gap-1">
-                  <Calendar className="w-3 h-3 text-slate-400" /> Follow-up Call Date:
+                  <Calendar className="w-3 h-3 text-slate-400" /> Follow-up Call Date / کال کی تاریخ:
                 </label>
                 <input
                   type="date"
                   value={followUpDate}
                   onChange={(e) => setFollowUpDate(e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-800 focus:border-purple-500 rounded-xl px-3 py-2 text-white focus:outline-none text-xs"
+                  className="w-full bg-slate-950 border border-slate-800 focus:border-purple-500 rounded-xl px-3 py-2 text-white focus:outline-none text-xs font-mono"
                 />
               </div>
 
               {/* Promised Payment Date */}
               <div className="space-y-1">
                 <label className="text-[11px] font-semibold text-slate-300 flex items-center gap-1">
-                  <Clock className="w-3 h-3 text-amber-400" /> Promised Date (Wada):
+                  <Clock className="w-3 h-3 text-amber-400" /> Promised Date / وعدہ تاریخ:
                 </label>
                 <input
                   type="date"
                   value={promiseDate}
                   onChange={(e) => setPromiseDate(e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-800 focus:border-emerald-500 rounded-xl px-3 py-2 text-white focus:outline-none text-xs"
+                  className="w-full bg-slate-950 border border-slate-800 focus:border-emerald-500 rounded-xl px-3 py-2 text-white focus:outline-none text-xs font-mono"
                 />
               </div>
             </div>
@@ -271,11 +275,11 @@ export default function RecoveryFollowUpModal({ sale, onClose, onSaved }) {
             {/* Remarks / Conversation Notes */}
             <div className="space-y-1">
               <label className="text-[11px] font-semibold text-slate-300 flex items-center gap-1">
-                <MessageSquare className="w-3 h-3 text-blue-400" /> Call Remarks / Conversation Note:
+                <MessageSquare className="w-3 h-3 text-blue-400" /> Call Remarks / Conversation Note / بات چیت کے ریمارکس:
               </label>
               <textarea
                 rows={3}
-                placeholder="Customer se kya baat hui? (e.g. Call ki thi, customer ne kaha k salary aane par 2 din baad payment karega...)"
+                placeholder="Customer se kya baat hui? (e.g. Call ki thi, customer ne kaha k salary aane par 2 din baad payment karega... / ریمارکس لکھیں)"
                 value={remarks}
                 onChange={(e) => setRemarks(e.target.value)}
                 className="w-full bg-slate-950 border border-slate-800 focus:border-blue-500 rounded-xl p-3 text-white focus:outline-none text-xs leading-relaxed"
@@ -288,17 +292,17 @@ export default function RecoveryFollowUpModal({ sale, onClose, onSaved }) {
               <button
                 type="button"
                 onClick={onClose}
-                className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl font-semibold transition cursor-pointer"
+                className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl font-semibold transition cursor-pointer text-xs"
               >
-                Cancel
+                Cancel / منسوخ
               </button>
 
               <button
                 type="submit"
                 disabled={saving}
-                className="px-5 py-2 bg-purple-600 hover:bg-purple-500 text-white rounded-xl font-bold transition flex items-center gap-2 cursor-pointer shadow-lg shadow-purple-950 disabled:opacity-50"
+                className="px-5 py-2 bg-purple-600 hover:bg-purple-500 text-white rounded-xl font-bold transition flex items-center gap-2 cursor-pointer shadow-lg shadow-purple-950 disabled:opacity-50 text-xs"
               >
-                {saving ? 'Saving...' : 'Save Follow-up & Promise'}
+                {saving ? 'Saving / محفوظ ہو رہا ہے...' : 'Save Follow-up & Promise / وعدہ اور ریمارکس محفوظ کریں'}
               </button>
             </div>
           </form>
