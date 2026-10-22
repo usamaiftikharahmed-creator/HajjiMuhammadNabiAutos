@@ -107,8 +107,10 @@ export const tempBackupUpload = multer({
   limits: { fileSize: 100 * 1024 * 1024 } // 100MB
 });
 
+import { uploadToGoogleDrive, isGoogleDriveConfigured } from './googleDriveService.js';
+
 /**
- * Mirror file to secondary backend folder and Google Drive (if mounted)
+ * Mirror file to secondary backend folder and Google Drive Cloud API (200GB)
  */
 export const mirrorUploadedFile = async (filePath, filename) => {
   if (!fs.existsSync(filePath)) return;
@@ -121,12 +123,21 @@ export const mirrorUploadedFile = async (filePath, filename) => {
     } catch (e) {}
   }
 
-  // 2. Copy to Google Drive (G:\My Drive\Haji Muhammad Nabi Autos\uploads)
+  // 2. Direct Cloud Upload to 200GB Google Drive API (Permanent Zero Data Loss)
+  if (isGoogleDriveConfigured()) {
+    try {
+      uploadToGoogleDrive(filePath, filename).catch(err => {
+        console.warn('Background Google Drive API upload error:', err.message);
+      });
+    } catch (e) {}
+  }
+
+  // 3. Fallback: Copy to mounted Google Drive letter if exists
   if (fs.existsSync('G:\\My Drive')) {
     try {
       const gDriveTarget = path.join(GDRIVE_UPLOADS_DIR, filename);
       await fs.promises.copyFile(filePath, gDriveTarget);
-      console.log(`☁️ Synced upload to Google Drive: ${filename}`);
+      console.log(`☁️ Synced upload to local Google Drive mount: ${filename}`);
     } catch (e) {}
   }
 };

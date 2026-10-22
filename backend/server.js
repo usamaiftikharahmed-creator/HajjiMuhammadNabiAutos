@@ -19,7 +19,7 @@ if (fs.existsSync(path.resolve(__dirname, '.env'))) {
 
 // Fallback defaults to ensure 100% offline functionality without missing config crashes
 process.env.JWT_SECRET = process.env.JWT_SECRET || 'super_secret_secure_key_10_out_of_10';
-process.env.MONGO_URI = process.env.MONGO_URI || 'mongodb+srv://usamaiftikharahmed:Chlorobenzene@cluster0.tcuhmiw.mongodb.net/installment_shop?retryWrites=true&w=majority';
+process.env.MONGO_URI = process.env.MONGO_URI || 'mongodb+srv://hajjimuhammadnabi_db_user:yousufkhan123@cluster0.f917dlj.mongodb.net/installment_shop?retryWrites=true&w=majority';
 process.env.CLIENT_URL = process.env.CLIENT_URL || 'http://localhost:5000';
 
 // Fix Windows DNS SRV lookup failures for MongoDB Atlas (Windows only)
@@ -48,6 +48,7 @@ import { initBackupScheduler } from './services/backupService.js';
 import { prewarmSalesCache } from './controllers/installmentController.js';
 import { loadAllData } from './services/offlineDb.js';
 import { syncOfflineDataToAtlas, startBackgroundSyncMonitor } from './services/syncService.js';
+import { getFileStreamFromGoogleDrive, syncAllLocalUploadsToDrive } from './services/googleDriveService.js';
 import User from './models/User.js';
 
 import compression from 'compression';
@@ -142,8 +143,8 @@ getUploadDirs().forEach(dir => {
   app.use('/uploads', express.static(dir));
 });
 
-// Explicit image / document delivery with proper MIME headers for uploads without extension
-app.get('/uploads/:filename', (req, res, next) => {
+// Explicit image / document delivery with Google Drive Cloud fallback
+app.get('/uploads/:filename', async (req, res, next) => {
   const filename = path.basename(req.params.filename);
   const possibleDirs = [
     path.join(os.tmpdir(), 'uploads'),
@@ -162,6 +163,19 @@ app.get('/uploads/:filename', (req, res, next) => {
       return res.sendFile(filePath);
     }
   }
+
+  // Fallback: If not on local disk (e.g. fresh Windows or hard drive crash), stream directly from Google Drive 200GB!
+  try {
+    const driveStream = await getFileStreamFromGoogleDrive(filename);
+    if (driveStream) {
+      res.setHeader('Content-Type', filename.endsWith('.pdf') ? 'application/pdf' : 'image/jpeg');
+      res.setHeader('Cache-Control', 'public, max-age=86400');
+      return driveStream.pipe(res);
+    }
+  } catch (driveErr) {
+    console.warn(`Drive stream error for ${filename}:`, driveErr.message);
+  }
+
   next();
 });
 
@@ -360,6 +374,7 @@ loadAllData();
 initBackupScheduler();
 prewarmSalesCache().catch(e => console.warn('Cache prewarm notice:', e.message));
 seedAdmin().catch(e => console.warn('Seed admin notice:', e.message));
+syncAllLocalUploadsToDrive().catch(e => console.warn('Google Drive sync notice:', e.message));
 
 // 3. Start Express Web/Desktop Server immediately (ready in <0.2 seconds)
 const PORT = process.env.PORT || 5000;
