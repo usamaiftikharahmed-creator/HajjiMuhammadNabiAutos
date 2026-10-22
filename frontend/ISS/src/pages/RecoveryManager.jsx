@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { 
   ShieldAlert, AlertTriangle, Clock, Search, Send, 
   RefreshCw, Phone, CheckCircle2, AlertCircle, ChevronLeft, ChevronRight,
-  MessageSquare, Calendar, Handshake, BellRing, Filter, DollarSign, ListFilter
+  MessageSquare, Calendar, Handshake, BellRing, Filter, DollarSign, ListFilter, Zap
 } from 'lucide-react';
 import ViewDetailsModal from '../components/ViewDetailsModal';
 import RecoveryFollowUpModal from '../components/RecoveryFollowUpModal';
@@ -128,11 +128,31 @@ export default function RecoveryManager() {
         }
       }
 
-      // Process if missedCount > 0 OR daysOverdue > 0 OR currently tracked by promise
-      if (missedCount > 0 || daysOverdue > 0 || isPromiseActive || isPromiseExpired) {
+      // SMART REMAINING ADVANCE EVALUATION
+      const hasPendingAdvance = Boolean(
+        (sale.remainingAdvance && Number(sale.remainingAdvance) > 0) || 
+        sale.remainingAdvanceStatus === 'PENDING'
+      );
+      const remainingAdvanceAmount = Number(sale.remainingAdvance || 0);
+      let remainingAdvancePromiseDateStr = null;
+      let isRemainingAdvanceDue = false;
+
+      if (hasPendingAdvance && sale.remainingAdvancePromiseDate) {
+        const rapDate = new Date(sale.remainingAdvancePromiseDate);
+        rapDate.setHours(0, 0, 0, 0);
+        remainingAdvancePromiseDateStr = rapDate.toLocaleDateString('en-PK', { day: 'numeric', month: 'short', year: 'numeric' });
+        if (rapDate <= today) {
+          isRemainingAdvanceDue = true;
+        }
+      }
+
+      // Process if missedCount > 0 OR daysOverdue > 0 OR currently tracked by promise OR has pending advance!
+      if (missedCount > 0 || daysOverdue > 0 || isPromiseActive || isPromiseExpired || hasPendingAdvance) {
         let category = 'overdue';
 
-        if (isPromiseActive) {
+        if (hasPendingAdvance && missedCount === 0 && daysOverdue <= 0 && !isPromiseActive) {
+          category = 'remaining_advance';
+        } else if (isPromiseActive) {
           category = 'promised';
         } else if (daysOverdue > 30 || missedCount >= 2) {
           category = 'defaulters';
@@ -158,6 +178,10 @@ export default function RecoveryManager() {
           isPromiseActive,
           isPromiseExpired,
           promiseDateStr,
+          hasPendingAdvance,
+          remainingAdvanceAmount,
+          remainingAdvancePromiseDateStr,
+          isRemainingAdvanceDue,
           followUps: sale.followUps || [],
           remarks: sale.remarks || '',
           dueDateStr: nextDue.toLocaleDateString('en-PK', { day: 'numeric', month: 'short', year: 'numeric' }),
@@ -183,6 +207,8 @@ export default function RecoveryManager() {
     let promisedCount = 0;
     let promiseExpiredCount = 0;
     let totalActionableAmount = 0;
+    let remainingAdvanceCount = 0;
+    let totalRemainingAdvanceAmount = 0;
 
     let oneMissed = 0;
     let twoMissed = 0;
@@ -191,6 +217,11 @@ export default function RecoveryManager() {
 
     for (let i = 0; i < processedData.length; i++) {
       const item = processedData[i];
+      if (item.hasPendingAdvance) {
+        remainingAdvanceCount++;
+        totalRemainingAdvanceAmount += item.remainingAdvanceAmount;
+      }
+
       if (item.isPromiseActive) {
         promisedCount++;
       } else {
@@ -220,6 +251,8 @@ export default function RecoveryManager() {
       defaulterCount, 
       promisedCount, 
       promiseExpiredCount,
+      remainingAdvanceCount,
+      totalRemainingAdvanceAmount,
       totalAmount: totalActionableAmount, 
       totalCount: processedData.length,
       oneMissed,
@@ -238,6 +271,8 @@ export default function RecoveryManager() {
       
       if (filterCategory === 'all') {
         matchesCat = item.category !== 'promised';
+      } else if (filterCategory === 'remaining_advance') {
+        matchesCat = item.hasPendingAdvance;
       } else if (filterCategory === 'promised') {
         matchesCat = item.isPromiseActive;
       } else if (filterCategory === 'expired') {
@@ -285,10 +320,14 @@ export default function RecoveryManager() {
       ? `\n*Missing Installments:* ${item.missedMonths.map(m => m.monthKey + (m.status === 'SHORT' ? ` (Rs. ${m.remainingAmount} Baqi)` : '')).join(', ')}`
       : '';
 
+    const advanceDetailStr = item.hasPendingAdvance
+      ? `\n*Remaining Advance Pending:* Rs. ${item.remainingAdvanceAmount?.toLocaleString()}${item.remainingAdvancePromiseDateStr ? ` (Wada: ${item.remainingAdvancePromiseDateStr})` : ''}`
+      : '';
+
     const message = 
       `*PAYMENT REMINDER - HAJJI MOHAMMAD NABI AUTOS*\n\n` +
       `Dear *${item.customerName}* (${item.customerId}),\n\n` +
-      `Aap ki *${item.itemName}* ki monthly installment overdue ho chuki hai.${missedDetailStr}\n` +
+      `Aap ki *${item.itemName}* ki monthly installment overdue ho chuki hai.${missedDetailStr}${advanceDetailStr}\n` +
       `*Total Overdue Amount:* Rs. ${item.totalMissedAmount.toLocaleString()}\n` +
       `*Monthly Target:* Rs. ${item.monthlyAmount?.toLocaleString()}\n` +
       `*Remaining Total Balance:* Rs. ${item.remainingBalance?.toLocaleString()}\n\n` +
@@ -451,6 +490,20 @@ export default function RecoveryManager() {
             >
               30D+ Defaulters ({metrics.defaulterCount})
             </button>
+
+            {metrics.remainingAdvanceCount > 0 && (
+              <button
+                onClick={() => { setFilterCategory('remaining_advance'); setPendingInstallmentsFilter('ALL'); }}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer flex items-center gap-1.5 ${
+                  filterCategory === 'remaining_advance' 
+                    ? 'bg-amber-500 text-slate-950 font-black shadow-lg shadow-amber-500/20' 
+                    : 'bg-amber-950/40 text-amber-300 border border-amber-600/50 hover:bg-amber-900/50 hover:text-white'
+                }`}
+              >
+                <Zap className="w-3.5 h-3.5 fill-amber-400 text-amber-400" />
+                ⚡ Baqi Advance ({metrics.remainingAdvanceCount})
+              </button>
+            )}
 
             <button
               onClick={() => setFilterCategory('promised')}
@@ -624,6 +677,29 @@ export default function RecoveryManager() {
                           </div>
                         )}
 
+                        {/* Baqi Advance Alert Badge */}
+                        {item.hasPendingAdvance && (
+                          <div className="mt-2 p-2 rounded-lg bg-amber-950/40 border border-amber-500/50 text-amber-200 shadow-sm space-y-1">
+                            <div className="flex items-center justify-between gap-1.5">
+                              <span className="inline-flex items-center gap-1 text-[10px] font-black uppercase text-amber-400">
+                                <Zap className="w-3 h-3 fill-amber-400 text-amber-400 shrink-0" />
+                                Baqi Advance:
+                              </span>
+                              <span className="text-[11px] font-extrabold text-amber-300 font-mono">
+                                Rs. {item.remainingAdvanceAmount?.toLocaleString()}
+                              </span>
+                            </div>
+                            {item.remainingAdvancePromiseDateStr && (
+                              <div className="flex items-center justify-between text-[9px] pt-1 border-t border-amber-500/20">
+                                <span className="text-slate-400">Wada Tareekh:</span>
+                                <span className={`font-semibold font-mono ${item.isRemainingAdvanceDue ? 'text-rose-400 font-bold' : 'text-amber-200'}`}>
+                                  {item.remainingAdvancePromiseDateStr} {item.isRemainingAdvanceDue ? '⚠️ (Due!)' : ''}
+                                </span>
+                              </div>
+                            )}
+                          </div>
+                        )}
+
                         {/* Missed Kist Badge & Breakdown Cardlet */}
                         {item.missedCount > 0 ? (
                           <div className="mt-2 p-2 rounded-lg bg-slate-900/90 border border-slate-800/90 shadow-sm space-y-1.5">
@@ -704,6 +780,13 @@ export default function RecoveryManager() {
                             </span>
                           )}
 
+                          {/* Baqi Advance Status Badge */}
+                          {item.hasPendingAdvance && (
+                            <span className="bg-amber-950/80 text-amber-300 border border-amber-500/60 px-2.5 py-0.5 rounded-lg text-[10px] font-bold uppercase inline-flex items-center gap-1 shadow-sm">
+                              <Zap className="w-3 h-3 fill-amber-400 text-amber-400" /> Advance Recovery Pending
+                            </span>
+                          )}
+
                           {/* Standard Overdue Badges */}
                           {!item.isPromiseActive && (
                             <div>
@@ -749,10 +832,10 @@ export default function RecoveryManager() {
                           {/* Wasool (Receive Payment) Button */}
                           <button
                             onClick={() => setSelectedSaleForPayment(item)}
-                            className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-2.5 py-1.5 rounded-xl text-xs flex items-center gap-1 transition cursor-pointer shadow-md shadow-emerald-950"
-                            title="Kist Wasool Karein (Pay Installment)"
+                            className={`${item.hasPendingAdvance ? 'bg-amber-500 hover:bg-amber-400 text-slate-950 font-black shadow-amber-950/40' : 'bg-emerald-600 hover:bg-emerald-500 text-white font-bold shadow-emerald-950'} px-2.5 py-1.5 rounded-xl text-xs flex items-center gap-1 transition cursor-pointer shadow-md`}
+                            title={item.hasPendingAdvance ? "Baqi Advance ya Kist Wasool Karein" : "Kist Wasool Karein (Pay Installment)"}
                           >
-                            <DollarSign className="w-3.5 h-3.5" /> Wasool
+                            <DollarSign className="w-3.5 h-3.5" /> {item.hasPendingAdvance && item.missedCount === 0 ? 'Advance Wasool' : 'Wasool'}
                           </button>
 
                           {/* Remarks / Follow-up Button */}

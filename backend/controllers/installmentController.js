@@ -45,7 +45,26 @@ export const createInstallmentSale = async (req, res) => {
     const engineNumber = cleanStr(req.body.engineNumber);
     const chassisNumber = cleanStr(req.body.chassisNumber);
     const totalAmount = Number(Array.isArray(req.body.totalAmount) ? req.body.totalAmount[0] : req.body.totalAmount);
-    const advancePayment = Number(Array.isArray(req.body.advancePayment) ? req.body.advancePayment[0] : req.body.advancePayment) || 0;
+    
+    // Partial Advance Payment Management
+    const totalAdvance = req.body.totalAdvance !== undefined && req.body.totalAdvance !== ''
+      ? (Number(Array.isArray(req.body.totalAdvance) ? req.body.totalAdvance[0] : req.body.totalAdvance) || 0)
+      : (Number(Array.isArray(req.body.advancePayment) ? req.body.advancePayment[0] : req.body.advancePayment) || 0);
+
+    const advancePaidNow = req.body.advancePaidNow !== undefined && req.body.advancePaidNow !== ''
+      ? Math.max(0, Number(Array.isArray(req.body.advancePaidNow) ? req.body.advancePaidNow[0] : req.body.advancePaidNow) || 0)
+      : totalAdvance;
+
+    const remainingAdvance = Math.max(0, totalAdvance - advancePaidNow);
+    const rawRemPromiseDate = cleanStr(req.body.remainingAdvancePromiseDate || req.body.remainingAdvanceDate);
+    let remainingAdvancePromiseDate = null;
+    if (remainingAdvance > 0 && rawRemPromiseDate) {
+      const parsed = new Date(rawRemPromiseDate);
+      if (!isNaN(parsed.getTime())) remainingAdvancePromiseDate = parsed;
+    }
+    const remainingAdvanceStatus = remainingAdvance > 0 ? 'PENDING' : 'NONE';
+    const advancePayment = totalAdvance; // Agreed advance
+
     const monthlyAmount = Number(Array.isArray(req.body.monthlyKist || req.body.monthlyAmount) ? (req.body.monthlyKist || req.body.monthlyAmount)[0] : (req.body.monthlyKist || req.body.monthlyAmount));
     const dueDateDay = Number(Array.isArray(req.body.dueDateDay) ? req.body.dueDateDay[0] : req.body.dueDateDay) || 5;
     const paymentMethod = cleanStr(req.body.paymentMode || req.body.paymentMethod) || 'Cash';
@@ -61,7 +80,7 @@ export const createInstallmentSale = async (req, res) => {
     }
 
     const total = totalAmount;
-    const remainingBalance = Math.max(0, total - advancePayment);
+    const remainingBalance = Math.max(0, total - totalAdvance);
     const totalMonths = Number(Array.isArray(req.body.totalMonths) ? req.body.totalMonths[0] : req.body.totalMonths) || (monthlyAmount > 0 ? Math.ceil(remainingBalance / monthlyAmount) : 1);
     const promiseMonth = cleanStr(req.body.promiseMonth);
     const promisedMonths = req.body.promisedMonths ? Number(Array.isArray(req.body.promisedMonths) ? req.body.promisedMonths[0] : req.body.promisedMonths) : null;
@@ -179,6 +198,11 @@ export const createInstallmentSale = async (req, res) => {
       chassisNumber,
       totalAmount: total,
       advancePayment,
+      totalAdvance,
+      advancePaidNow,
+      remainingAdvance,
+      remainingAdvancePromiseDate,
+      remainingAdvanceStatus,
       remainingBalance,
       monthlyAmount,
       totalMonths,
@@ -199,21 +223,23 @@ export const createInstallmentSale = async (req, res) => {
       documents,
       nextDueDate: nextDue,
       createdAt: bookingDate,
-      lastPaymentDate: advancePayment > 0 ? bookingDate : null,
+      lastPaymentDate: advancePaidNow > 0 ? bookingDate : null,
       status: remainingBalance === 0 ? 'completed' : 'active',
       createdBy: req.user?._id || null
     });
 
     let advancePaymentRecord = null;
-    if (advancePayment > 0) {
+    if (advancePaidNow > 0) {
       advancePaymentRecord = await Payment.create({
         installmentSale: installmentSale._id,
         customer: customer._id,
-        amountPaid: advancePayment,
+        amountPaid: advancePaidNow,
         paymentMethod,
         forMonth: 'Advance Payment',
         receivedBy: req.user?._id || null,
-        notes: 'Advance Payment at Booking',
+        notes: remainingAdvance > 0 
+          ? `Advance Payment (Paid Rs. ${advancePaidNow.toLocaleString()} of Rs. ${totalAdvance.toLocaleString()} Agreed Advance. Baqi Advance Rs. ${remainingAdvance.toLocaleString()} promised on ${remainingAdvancePromiseDate ? remainingAdvancePromiseDate.toISOString().split('T')[0] : 'N/A'})`
+          : 'Advance Payment at Booking',
         createdAt: bookingDate
       });
     }
@@ -266,6 +292,67 @@ export const recordPayment = async (req, res) => {
     const paid = Number(rawAmount);
     if (isNaN(paid) || paid <= 0) {
       return res.status(400).json({ success: false, message: 'Please enter a valid positive payment amount' });
+    }
+
+    const isRemainingAdvance = Boolean(
+      req.body.isRemainingAdvance || 
+      req.body.paymentType === 'REMAINING_ADVANCE' || 
+      forMonth === 'Remaining Advance'
+    );
+
+    if (isRemainingAdvance) {
+      if (!sale.remainingAdvance || sale.remainingAdvance <= 0) {
+        return res.status(400).json({ 
+          success: false, 
+          message: 'Is khata mein koi Remaining Advance baqi nahi hai.' 
+        });
+      }
+
+      if (paid > sale.remainingAdvance) {
+        return res.status(400).json({ 
+          success: false, 
+          message: `Amount (Rs. ${paid.toLocaleString()}) baqi advance (Rs. ${sale.remainingAdvance.toLocaleString()}) se zyada hai.` 
+        });
+      }
+
+      const payment = await Payment.create({
+        installmentSale: sale._id,
+        customer: sale.customer?._id || sale.customer,
+        amountPaid: paid,
+        paymentMethod,
+        transactionId,
+        forMonth: 'Remaining Advance',
+        notes: notes || 'Remaining Advance Payment Received',
+        receivedBy: req.user?._id || null
+      });
+
+      sale.remainingAdvance = Math.max(0, (sale.remainingAdvance || 0) - paid);
+      sale.advancePaidNow = (sale.advancePaidNow || 0) + paid;
+      if (sale.remainingAdvance === 0) {
+        sale.remainingAdvanceStatus = 'PAID';
+      }
+      sale.lastPaymentDate = new Date();
+      await sale.save();
+
+      await logActivity({
+        req,
+        action: 'RECORD_PAYMENT',
+        module: 'Payments',
+        details: `Remaining Advance Wasooli: Rs. ${paid.toLocaleString()} wasool huay for "${sale.customer?.name || 'Customer'}" (Item: "${sale.itemName}"). Baqi Advance: Rs. ${sale.remainingAdvance.toLocaleString()}`,
+        targetId: payment._id,
+        targetName: sale.customer?.name,
+        metadata: { itemName: sale.itemName, paid, paymentMethod, remainingAdvance: sale.remainingAdvance }
+      });
+
+      invalidateSalesCache();
+
+      return res.status(201).json({
+        success: true,
+        message: 'Remaining advance payment recorded successfully',
+        remainingAdvance: sale.remainingAdvance,
+        payment,
+        sale
+      });
     }
 
     if (paid > sale.remainingBalance) {

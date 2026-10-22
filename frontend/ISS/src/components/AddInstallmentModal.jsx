@@ -31,7 +31,10 @@ export default function AddInstallmentModal({ onClose, onSuccess }) {
     engineNumber: '', // Optional Field
     chassisNumber: '', // Optional Field
     totalAmount: '',
+    totalAdvance: '0',
+    advancePaidNow: '0',
     advancePayment: '0',
+    remainingAdvancePromiseDate: '',
     monthlyKist: '',
     totalMonths: '',
     promiseMonth: '',
@@ -194,11 +197,29 @@ export default function AddInstallmentModal({ onClose, onSuccess }) {
   // Bi-directional Auto Calculation & Synchronization for Item & Kist:
   // 1. Enter totalMonths -> auto-calculates monthlyKist (keeps promiseMonth independent)
   // 2. Enter monthlyKist -> auto-calculates totalMonths (e.g. 33 months, keeps promiseMonth independent)
-  // 3. Change totalAmount / advancePayment -> auto-updates dependent fields
+  // 3. Change totalAmount / totalAdvance / advancePaidNow -> auto-updates dependent fields
   const handleAmountChange = (field, value) => {
     const updated = { ...formData, [field]: value };
+
+    if (field === 'totalAdvance') {
+      const prevTotal = parseFloat(formData.totalAdvance) || 0;
+      const prevPaid = parseFloat(formData.advancePaidNow) || 0;
+      updated.totalAdvance = value;
+      updated.advancePayment = value;
+      // Auto sync advancePaidNow if it was untouched or equal to totalAdvance
+      if (prevPaid === prevTotal || !formData.advancePaidNow || formData.advancePaidNow === '0') {
+        updated.advancePaidNow = value;
+      }
+    } else if (field === 'advancePaidNow') {
+      updated.advancePaidNow = value;
+    } else if (field === 'advancePayment') {
+      updated.advancePayment = value;
+      updated.totalAdvance = value;
+      updated.advancePaidNow = value;
+    }
+
     const total = parseFloat(field === 'totalAmount' ? value : updated.totalAmount) || 0;
-    const advance = parseFloat(field === 'advancePayment' ? value : updated.advancePayment) || 0;
+    const advance = parseFloat(updated.totalAdvance || updated.advancePayment) || 0;
     const remaining = Math.max(0, total - advance);
 
     if (field === 'totalMonths') {
@@ -217,7 +238,7 @@ export default function AddInstallmentModal({ onClose, onSuccess }) {
       } else if (!value) {
         updated.totalMonths = '';
       }
-    } else if (field === 'totalAmount' || field === 'advancePayment') {
+    } else if (['totalAmount', 'totalAdvance', 'advancePayment', 'advancePaidNow'].includes(field)) {
       if (calculationSource === 'monthlyKist' && updated.monthlyKist && parseFloat(updated.monthlyKist) > 0) {
         const kist = parseFloat(updated.monthlyKist);
         updated.totalMonths = remaining > 0 ? Math.ceil(remaining / kist).toString() : '';
@@ -268,7 +289,7 @@ export default function AddInstallmentModal({ onClose, onSuccess }) {
 
   const handleInputChange = (e) => {
     const { name, value } = e.target;
-    if (['totalAmount', 'advancePayment', 'monthlyKist', 'totalMonths'].includes(name)) {
+    if (['totalAmount', 'advancePayment', 'totalAdvance', 'advancePaidNow', 'monthlyKist', 'totalMonths'].includes(name)) {
       handleAmountChange(name, value);
     } else if (name === 'promiseMonth') {
       handlePromiseMonthChange(value);
@@ -321,6 +342,12 @@ export default function AddInstallmentModal({ onClose, onSuccess }) {
     setExtraDocs(prev => prev.filter((_, idx) => idx !== index));
   };
 
+  const numTotalAdvance = parseFloat(formData.totalAdvance || formData.advancePayment) || 0;
+  const numPaidNow = parseFloat(formData.advancePaidNow !== undefined && formData.advancePaidNow !== '' ? formData.advancePaidNow : numTotalAdvance) || 0;
+  const numRemainingAdvance = Math.max(0, numTotalAdvance - numPaidNow);
+  const isPartialAdvance = numTotalAdvance > 0 && numPaidNow < numTotalAdvance;
+  const remainingBalance = Math.max(0, (parseFloat(formData.totalAmount) || 0) - numTotalAdvance);
+
   const handleSubmit = async (e) => {
     e.preventDefault();
 
@@ -351,7 +378,13 @@ export default function AddInstallmentModal({ onClose, onSuccess }) {
       return;
     }
 
-    // 5. Item & Plan Checks
+    // 5. Partial Advance Promise Date Validation
+    if (isPartialAdvance && !formData.remainingAdvancePromiseDate) {
+      toast.error('Baqi Advance ki Promise Date lazmi muntakhab karein');
+      return;
+    }
+
+    // 6. Item & Plan Checks
     if (!formData.itemName?.trim()) {
       toast.error('Item Name likhna zaroori hai');
       return;
@@ -375,7 +408,7 @@ export default function AddInstallmentModal({ onClose, onSuccess }) {
       return;
     }
 
-    // 6. Guarantor Phone Checks (If filled, must be 11 digits)
+    // 7. Guarantor Phone Checks (If filled, must be 11 digits)
     if (formData.guarantor1Phone && formData.guarantor1Phone.length !== 11) {
       toast.error('Guarantor 1 Phone poora 11 digits ka hona chahiye');
       setTouched(prev => ({ ...prev, guarantor1Phone: true }));
@@ -409,6 +442,15 @@ export default function AddInstallmentModal({ onClose, onSuccess }) {
       submitData.append('saleDate', formData.bookingDate);
       submitData.append('model', formData.modelYear);
 
+      // Append explicit Partial Advance parameters
+      submitData.append('totalAdvance', numTotalAdvance.toString());
+      submitData.append('advancePaidNow', numPaidNow.toString());
+      submitData.append('remainingAdvance', numRemainingAdvance.toString());
+      submitData.append('advancePayment', numTotalAdvance.toString());
+      if (isPartialAdvance && formData.remainingAdvancePromiseDate) {
+        submitData.append('remainingAdvancePromiseDate', formData.remainingAdvancePromiseDate);
+      }
+
       // Append fixed CNIC files
       Object.keys(files).forEach(key => {
         if (files[key]) submitData.append(key, files[key]);
@@ -438,8 +480,6 @@ export default function AddInstallmentModal({ onClose, onSuccess }) {
       setLoading(false);
     }
   };
-
-  const remainingBalance = Math.max(0, (parseFloat(formData.totalAmount) || 0) - (parseFloat(formData.advancePayment) || 0));
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-5 bg-black/80 backdrop-blur-sm overflow-y-auto">
@@ -820,25 +860,92 @@ export default function AddInstallmentModal({ onClose, onSuccess }) {
                 />
               </div>
 
+              {/* Total Advance Agreed */}
               <div>
-                <label className="block text-slate-300 mb-1 font-medium">Advance Payment (Rs.)</label>
+                <label className="block text-slate-300 mb-1 font-medium">Total Advance Agreed (Rs.)</label>
                 <input
                   type="number"
                   min="0"
-                  name="advancePayment"
-                  value={formData.advancePayment}
+                  name="totalAdvance"
+                  value={formData.totalAdvance}
                   onChange={handleInputChange}
                   placeholder="0"
-                  className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3.5 py-2 text-white outline-none focus:border-amber-500 text-xs font-mono"
+                  className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3.5 py-2 text-white outline-none focus:border-amber-500 text-xs font-mono font-bold"
                 />
               </div>
 
+              {/* Pay Right Now (Cash / Online received at booking) */}
+              <div>
+                <label className="block text-slate-300 mb-1 font-medium flex items-center justify-between">
+                  <span>Pay Right Now (Rs.)</span>
+                  {isPartialAdvance && (
+                    <span className="text-[10px] text-amber-400 font-semibold bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/20">
+                      Partial Advance
+                    </span>
+                  )}
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  name="advancePaidNow"
+                  value={formData.advancePaidNow}
+                  onChange={handleInputChange}
+                  placeholder="0"
+                  className={`w-full bg-slate-900 border ${
+                    isPartialAdvance 
+                      ? 'border-amber-500/70 focus:border-amber-400 bg-amber-950/10' 
+                      : 'border-slate-800 focus:border-amber-500'
+                  } rounded-xl px-3.5 py-2 text-white outline-none text-xs font-mono font-bold`}
+                />
+              </div>
+
+              {/* Remaining Financed Balance */}
               <div>
                 <label className="block text-slate-400 mb-1 font-medium">Remaining Financed Balance</label>
                 <div className="w-full bg-slate-900/80 border border-slate-800 rounded-xl px-3.5 py-2 font-black text-amber-400 font-mono text-sm">
                   Rs. {remainingBalance.toLocaleString()}
                 </div>
               </div>
+
+              {/* Conditional 2 Columns for Remaining Advance (Only visible when user pays partial advance) */}
+              {isPartialAdvance && (
+                <div className="col-span-1 sm:col-span-2 lg:col-span-3 bg-gradient-to-r from-amber-950/30 via-slate-900 to-amber-950/20 border border-amber-500/40 rounded-2xl p-3.5 my-0.5 shadow-lg">
+                  <div className="flex items-center gap-2 mb-2.5">
+                    <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse"></span>
+                    <h4 className="text-xs font-bold text-amber-300 uppercase tracking-wide flex items-center gap-1.5">
+                      <span>Baqi Advance ki Tafseelat</span>
+                      <span className="text-[10px] font-normal text-slate-400 capitalize">(Customer ne advance split karwaya hai)</span>
+                    </h4>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                    <div>
+                      <label className="block text-slate-300 mb-1 font-medium text-xs flex justify-between">
+                        <span>Remaining Advance (Baqi Advance)</span>
+                        <span className="text-[10px] font-mono font-bold text-amber-400 bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/20">
+                          Baqi Raqam
+                        </span>
+                      </label>
+                      <div className="w-full bg-slate-950/80 border border-amber-500/50 rounded-xl px-3.5 py-2 font-mono font-black text-amber-400 text-sm">
+                        Rs. {numRemainingAdvance.toLocaleString()}
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-slate-300 mb-1 font-medium text-xs flex items-center justify-between">
+                        <span>Remaining Advance Promise Date *</span>
+                        <span className="text-[10px] text-amber-400 font-mono font-bold">Wada Tareekh</span>
+                      </label>
+                      <input
+                        type="date"
+                        required={isPartialAdvance}
+                        name="remainingAdvancePromiseDate"
+                        value={formData.remainingAdvancePromiseDate}
+                        onChange={handleInputChange}
+                        className="w-full bg-slate-950 border border-amber-500/60 rounded-xl px-3.5 py-2 text-white outline-none focus:border-amber-400 text-xs font-mono font-bold"
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {/* Monthly Kist Input (Syncs Total Months) */}
               <div>

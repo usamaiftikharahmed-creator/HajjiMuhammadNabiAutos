@@ -34,6 +34,7 @@ export default function PayKistModal({ sale, selectedSale, onClose, onSuccess })
     return getPromiseMonthsInfo(activeSale);
   }, [activeSale]);
 
+  const [isPayingRemainingAdvance, setIsPayingRemainingAdvance] = useState(false);
   const [forMonth, setForMonth] = useState(defaultMonth);
   const [amountPaid, setAmountPaid] = useState(defaultAmount);
   const [paymentMethod, setPaymentMethod] = useState('Cash');
@@ -94,12 +95,13 @@ export default function PayKistModal({ sale, selectedSale, onClose, onSuccess })
   if (!activeSale) return null;
 
   const currentRemaining = Number(activeSale.remainingBalance || 0);
+  const pendingAdvanceAmount = Number(activeSale.remainingAdvance || 0);
   const inputAmount = Number(amountPaid) || 0;
   const projectedRemaining = Math.max(0, currentRemaining - inputAmount);
 
   const customerObj = typeof activeSale.customer === 'object' ? activeSale.customer : {};
   const customerName = customerObj.name || customerObj.fullName || activeSale.customerName || 'Customer';
-  const customerId = customerObj.customerId || activeSale.customerId || 'N/A';
+  const customerId = customerObj.customerId || activeSale.customerId || 'CUST';
   const customerPhone = customerObj.phone || activeSale.customerPhone || '';
 
   const handleSubmit = async (e) => {
@@ -109,9 +111,16 @@ export default function PayKistModal({ sale, selectedSale, onClose, onSuccess })
       return;
     }
 
-    if (Number(amountPaid) > currentRemaining) {
-      toast.error(`Amount baki baqaya (Rs. ${currentRemaining.toLocaleString()}) se zyada nahi ho sakti.`);
-      return;
+    if (isPayingRemainingAdvance) {
+      if (Number(amountPaid) > pendingAdvanceAmount) {
+        toast.error(`Amount baki advance (Rs. ${pendingAdvanceAmount.toLocaleString()}) se zyada nahi ho sakti.`);
+        return;
+      }
+    } else {
+      if (Number(amountPaid) > currentRemaining) {
+        toast.error(`Amount baki baqaya (Rs. ${currentRemaining.toLocaleString()}) se zyada nahi ho sakti.`);
+        return;
+      }
     }
 
     setLoading(true);
@@ -123,15 +132,22 @@ export default function PayKistModal({ sale, selectedSale, onClose, onSuccess })
         amountPaid: Number(amountPaid),
         paymentMethod,
         transactionId,
-        forMonth,
-        notes
+        forMonth: isPayingRemainingAdvance ? 'Remaining Advance' : forMonth,
+        notes: notes || (isPayingRemainingAdvance ? 'Remaining Advance Cleared' : ''),
+        isRemainingAdvance: isPayingRemainingAdvance
       });
 
       if (res.data?.success) {
-        // Update local object balance
-        activeSale.remainingBalance = res.data.remainingBalance ?? projectedRemaining;
-        if (activeSale.remainingBalance === 0) {
-          activeSale.status = 'completed';
+        if (isPayingRemainingAdvance) {
+          activeSale.remainingAdvance = res.data.remainingAdvance ?? Math.max(0, pendingAdvanceAmount - Number(amountPaid));
+          if (activeSale.remainingAdvance === 0) {
+            activeSale.remainingAdvanceStatus = 'PAID';
+          }
+        } else {
+          activeSale.remainingBalance = res.data.remainingBalance ?? projectedRemaining;
+          if (activeSale.remainingBalance === 0) {
+            activeSale.status = 'completed';
+          }
         }
         setCreatedPayment(res.data.payment);
         toast.success(`Rs. ${Number(amountPaid).toLocaleString()} ki payment kamyabi se record ho gayi!`);
@@ -300,6 +316,52 @@ export default function PayKistModal({ sale, selectedSale, onClose, onSuccess })
         )}
 
         {/* Item & Financial Summary Card */}
+        {/* PENDING REMAINING ADVANCE NOTIFICATION & QUICK SWITCH */}
+        {pendingAdvanceAmount > 0 && (
+          <div className={`p-3 rounded-2xl border transition flex items-center justify-between gap-3 ${
+            isPayingRemainingAdvance 
+              ? 'bg-amber-950/60 border-amber-500 text-white shadow-lg' 
+              : 'bg-amber-950/20 border-amber-500/30 text-amber-300'
+          }`}>
+            <div className="flex items-center gap-2.5">
+              <span className="w-2.5 h-2.5 rounded-full bg-amber-400 animate-pulse" />
+              <div>
+                <p className="text-xs font-bold text-amber-200">
+                  Baqi Advance: Rs. {pendingAdvanceAmount.toLocaleString()}
+                </p>
+                {activeSale.remainingAdvancePromiseDate && (
+                  <p className="text-[10px] text-slate-400">
+                    Wada: {new Date(activeSale.remainingAdvancePromiseDate).toLocaleDateString('en-PK', { day: 'numeric', month: 'short', year: 'numeric' })}
+                  </p>
+                )}
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                const nextState = !isPayingRemainingAdvance;
+                setIsPayingRemainingAdvance(nextState);
+                if (nextState) {
+                  setAmountPaid(pendingAdvanceAmount);
+                  setForMonth('Remaining Advance');
+                  setNotes('Remaining Advance Cleared');
+                } else {
+                  setAmountPaid(defaultAmount);
+                  setForMonth(defaultMonth);
+                  setNotes('');
+                }
+              }}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer ${
+                isPayingRemainingAdvance 
+                  ? 'bg-amber-500 text-slate-950 font-black shadow-md' 
+                  : 'bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40'
+              }`}
+            >
+              {isPayingRemainingAdvance ? '✓ Paying Remaining Advance' : 'Pay Baqi Advance'}
+            </button>
+          </div>
+        )}
+
         <div className="bg-slate-950 p-3.5 rounded-2xl border border-slate-800 text-xs space-y-2">
           <div className="flex justify-between items-start">
             <span className="text-slate-400">Item Account:</span>

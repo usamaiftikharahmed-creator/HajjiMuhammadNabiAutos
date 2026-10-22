@@ -40,6 +40,28 @@ const installmentSaleSchema = new mongoose.Schema(
       type: Number,
       default: 0
     },
+    // Partial Advance Payment Management
+    totalAdvance: {
+      type: Number,
+      default: 0
+    },
+    advancePaidNow: {
+      type: Number,
+      default: 0
+    },
+    remainingAdvance: {
+      type: Number,
+      default: 0
+    },
+    remainingAdvancePromiseDate: {
+      type: Date,
+      default: null
+    },
+    remainingAdvanceStatus: {
+      type: String,
+      enum: ['NONE', 'PENDING', 'PAID'],
+      default: 'NONE'
+    },
     remainingBalance: {
       type: Number,
       required: true
