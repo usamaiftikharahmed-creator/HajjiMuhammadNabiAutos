@@ -1,3 +1,6 @@
+import mongoose from 'mongoose';
+import fs from 'fs';
+import path from 'path';
 import Customer from '../models/Customer.js';
 import InstallmentSale from '../models/InstallmentSale.js';
 import Payment from '../models/Payment.js';
@@ -7,7 +10,8 @@ import { logActivity } from '../utils/logger.js';
 import { invalidateDashboardCache } from '../routes/dashboardRoutes.js';
 import { triggerDebouncedLiveJsonSync } from '../services/backupService.js';
 import { offlineDb } from '../services/offlineDb.js';
-import { mirrorUploadedFile } from '../services/uploadService.js';
+import { mirrorUploadedFile, getUploadDirs } from '../services/uploadService.js';
+import { deleteFromGoogleDrive } from '../services/googleDriveService.js';
 
 // Process-wide Singleton RAM cache for sub-millisecond page loads (<1ms)
 const SALES_CACHE_TTL_MS = 60000; // 60 seconds TTL
@@ -862,6 +866,36 @@ export const deleteSaleDocument = async (req, res) => {
   try {
     const { id, docId } = req.params;
 
+    const sale = await InstallmentSale.findById(id);
+    if (!sale) {
+      return res.status(404).json({ success: false, message: 'Installment account not found' });
+    }
+
+    // 1. Identify the file being removed to delete it from Google Drive & local disk
+    const docToDelete = (sale.documents || []).find(d => 
+      d._id?.toString() === docId.toString() || 
+      d.fileUrl === docId || 
+      d.fileUrl === `/uploads/${docId}`
+    );
+
+    if (docToDelete && docToDelete.fileUrl) {
+      const filenameToDelete = path.basename(docToDelete.fileUrl);
+      // Delete directly from 200GB Google Drive uploads folder
+      try {
+        await deleteFromGoogleDrive(filenameToDelete);
+      } catch (driveDelErr) {
+        console.warn('Google Drive delete error:', driveDelErr.message);
+      }
+      // Delete from local disks if present
+      getUploadDirs().forEach(dir => {
+        try {
+          const p = path.join(dir, filenameToDelete);
+          if (fs.existsSync(p)) fs.unlinkSync(p);
+        } catch (e) {}
+      });
+    }
+
+    // 2. Atomic $pull from MongoDB
     const targetObjId = mongoose.Types.ObjectId.isValid(docId) ? new mongoose.Types.ObjectId(docId) : null;
     const pullCondition = targetObjId 
       ? { $or: [{ _id: targetObjId }, { _id: docId }] }
@@ -875,17 +909,14 @@ export const deleteSaleDocument = async (req, res) => {
 
     // Defensive fallback: check if document still exists by ID or fileUrl
     if (!updatedSale || updatedSale.documents.some(d => d._id?.toString() === docId.toString() || d.fileUrl === docId || d.fileUrl === `/uploads/${docId}`)) {
-      const sale = await InstallmentSale.findById(id);
-      if (sale) {
-        sale.documents = sale.documents.filter(d => 
-          d._id?.toString() !== docId.toString() && 
-          d.fileUrl !== docId && 
-          d.fileUrl !== `/uploads/${docId}`
-        );
-        sale.markModified('documents');
-        await sale.save();
-        updatedSale = sale;
-      }
+      sale.documents = (sale.documents || []).filter(d => 
+        d._id?.toString() !== docId.toString() && 
+        d.fileUrl !== docId && 
+        d.fileUrl !== `/uploads/${docId}`
+      );
+      sale.markModified('documents');
+      await sale.save();
+      updatedSale = sale;
     }
 
     if (!updatedSale) {
