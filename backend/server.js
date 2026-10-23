@@ -19,7 +19,7 @@ if (fs.existsSync(path.resolve(__dirname, '.env'))) {
 
 // Fallback defaults to ensure 100% offline functionality without missing config crashes
 process.env.JWT_SECRET = process.env.JWT_SECRET || 'super_secret_secure_key_10_out_of_10';
-process.env.MONGO_URI = process.env.MONGO_URI || 'mongodb+srv://hajjimuhammadnabi_db_user:yousufkhan123@cluster0.f917dlj.mongodb.net/installment_shop?retryWrites=true&w=majority';
+process.env.MONGO_URI = process.env.MONGO_URI || 'mongodb+srv://usamaiftikharahmed:Chlorobenzene@cluster0.tcuhmiw.mongodb.net/installment_shop?retryWrites=true&w=majority';
 process.env.CLIENT_URL = process.env.CLIENT_URL || 'http://localhost:5000';
 
 // Fix Windows DNS SRV lookup failures for MongoDB Atlas (Windows only)
@@ -136,47 +136,84 @@ app.use(async (req, res, next) => {
   next();
 });
 
-import { getUploadDirs } from './services/uploadService.js';
+import { getUploadDirs, detectMimeType, findUploadedFile } from './services/uploadService.js';
 
-// Serve uploaded files statically from all possible directories
-getUploadDirs().forEach(dir => {
-  app.use('/uploads', express.static(dir));
-});
+// Explicit image / document delivery and download with Google Drive Cloud fallback
+app.get(['/uploads/:filename', '/api/installments/download/:filename'], async (req, res) => {
+  const rawParam = req.params.filename || '';
+  const filename = path.basename(rawParam);
 
-// Explicit image / document delivery with Google Drive Cloud fallback
-app.get('/uploads/:filename', async (req, res, next) => {
-  const filename = path.basename(req.params.filename);
-  const possibleDirs = [
-    path.join(os.tmpdir(), 'uploads'),
-    path.resolve(__dirname, 'uploads'),
-    path.resolve(__dirname, '..', 'uploads'),
-    path.resolve(process.cwd(), 'backend', 'uploads'),
-    path.resolve(process.cwd(), 'uploads'),
-    path.resolve(__dirname, '..', 'Haji Muhammad Nabi Autos', 'uploads')
-  ];
-
-  for (const dir of possibleDirs) {
-    const filePath = path.join(dir, filename);
-    if (fs.existsSync(filePath)) {
-      res.setHeader('Content-Type', 'image/jpeg');
-      res.setHeader('Cache-Control', 'public, max-age=86400');
-      return res.sendFile(filePath);
-    }
+  if (!filename) {
+    return res.status(400).json({ success: false, message: 'Filename required' });
   }
 
-  // Fallback: If not on local disk (e.g. fresh Windows or hard drive crash), stream directly from Google Drive 200GB!
+  // 1. Try local disk search across all directories and variations
+  const localFilePath = findUploadedFile(filename);
+
+  if (localFilePath) {
+    const mimeType = detectMimeType(localFilePath, filename);
+    res.setHeader('Content-Type', mimeType);
+    res.setHeader('Cache-Control', 'public, max-age=86400');
+
+    // Check if download is explicitly requested
+    const isDownload = req.query.download === '1' || req.query.download === 'true' || req.path.includes('/download/');
+    if (isDownload) {
+      let downloadTitle = (req.query.title ? String(req.query.title).trim() : path.basename(localFilePath));
+      // Ensure file has an appropriate extension for saving to PC
+      if (!path.extname(downloadTitle)) {
+        if (mimeType === 'application/pdf') downloadTitle += '.pdf';
+        else if (mimeType === 'image/webp') downloadTitle += '.webp';
+        else if (mimeType === 'image/png') downloadTitle += '.png';
+        else if (mimeType === 'image/jpeg') downloadTitle += '.jpg';
+      }
+      res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(downloadTitle)}"; filename*=UTF-8''${encodeURIComponent(downloadTitle)}`);
+    } else {
+      res.setHeader('Content-Disposition', `inline; filename="${encodeURIComponent(filename)}"`);
+    }
+
+    return res.sendFile(localFilePath);
+  }
+
+  // 2. Fallback: If not on local disk, try Google Drive with a fast 3.5s timeout
   try {
     const driveStream = await getFileStreamFromGoogleDrive(filename);
     if (driveStream) {
-      res.setHeader('Content-Type', filename.endsWith('.pdf') ? 'application/pdf' : 'image/jpeg');
+      const ext = path.extname(filename).toLowerCase();
+      let mimeType = 'application/octet-stream';
+      if (ext === '.pdf') mimeType = 'application/pdf';
+      else if (ext === '.webp') mimeType = 'image/webp';
+      else if (ext === '.png') mimeType = 'image/png';
+      else if (ext === '.jpg' || ext === '.jpeg') mimeType = 'image/jpeg';
+
+      res.setHeader('Content-Type', mimeType);
       res.setHeader('Cache-Control', 'public, max-age=86400');
+
+      const isDownload = req.query.download === '1' || req.query.download === 'true' || req.path.includes('/download/');
+      const downloadTitle = req.query.title ? String(req.query.title).trim() : filename;
+      res.setHeader(
+        'Content-Disposition',
+        isDownload 
+          ? `attachment; filename="${encodeURIComponent(downloadTitle)}"` 
+          : `inline; filename="${encodeURIComponent(filename)}"`
+      );
+
       return driveStream.pipe(res);
     }
   } catch (driveErr) {
-    console.warn(`Drive stream error for ${filename}:`, driveErr.message);
+    console.warn(`Drive stream notice for ${filename}:`, driveErr.message);
   }
 
-  next();
+  // 3. File not found: respond immediately with 404 (NEVER hang or call next() without response)
+  const isDownload = req.query.download === '1' || req.query.download === 'true' || req.path.includes('/download/');
+  if (isDownload) {
+    return res.status(404).send('Document not found on server.');
+  }
+  return res.status(404).json({ success: false, message: `File "${filename}" not found on server.` });
+});
+
+// Serve uploaded files statically as fallback
+getUploadDirs().forEach(dir => {
+  app.use('/uploads', express.static(dir));
 });
 
 // 2. RATE LIMITER (Must be before routes)

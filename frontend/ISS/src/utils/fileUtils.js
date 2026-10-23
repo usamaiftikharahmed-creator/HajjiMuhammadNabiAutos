@@ -16,13 +16,19 @@ export const getFileUrl = (url) => {
   const clean = url.startsWith('/') ? url : `/${url}`;
 
   // If in Vite dev environment (port 5173), direct uploads to backend port 5000
-  if (typeof window !== 'undefined' && window.location.port === '5173') {
-    return `http://localhost:5000${clean}`;
-  }
-
-  // In production on Vercel, direct uploads to live backend
-  if (typeof window !== 'undefined' && window.location.hostname !== 'localhost') {
-    return `https://hajji-muhammad-nabi-autos.vercel.app${clean}`;
+  if (typeof window !== 'undefined') {
+    const { hostname, port } = window.location;
+    if (port === '5173') {
+      return `http://localhost:5000${clean}`;
+    }
+    // On localhost, 127.0.0.1, or LAN network:
+    if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname.startsWith('192.168.') || hostname.startsWith('10.')) {
+      return clean;
+    }
+    // In production on Vercel:
+    if (hostname.includes('vercel.app')) {
+      return clean;
+    }
   }
 
   return clean;

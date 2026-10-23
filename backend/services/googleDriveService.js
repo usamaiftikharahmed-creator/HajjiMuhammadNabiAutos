@@ -123,31 +123,58 @@ export const getFileStreamFromGoogleDrive = async (fileNameOrId) => {
     const drive = getDriveClient();
     if (!drive) return null;
 
-    let targetFileId = fileNameOrId;
+    let targetFileId = null;
+
+    // Timeout helper to prevent Google API from hanging requests
+    const withTimeout = (promise, ms = 3500) => {
+      let timer;
+      const timeoutPromise = new Promise((_, reject) => {
+        timer = setTimeout(() => reject(new Error('Google Drive stream timed out')), ms);
+      });
+      return Promise.race([promise, timeoutPromise]).finally(() => clearTimeout(timer));
+    };
 
     // If it looks like a filename, search by name in folder
-    if (fileNameOrId.includes('.') || fileNameOrId.length > 30) {
+    if (fileNameOrId.includes('.') || fileNameOrId.length > 20) {
       const folderId = process.env.GOOGLE_DRIVE_FOLDER_ID;
-      const searchRes = await drive.files.list({
-        q: `'${folderId}' in parents and name = '${fileNameOrId}' and trashed = false`,
-        fields: 'files(id, name, mimeType)',
-        spaces: 'drive',
-        pageSize: 1
-      });
+      const baseName = fileNameOrId.includes('.') ? fileNameOrId.replace(/\.[^/.]+$/, "") : fileNameOrId;
+      const query = folderId
+        ? `'${folderId}' in parents and (name = '${fileNameOrId}' or name = '${baseName}') and trashed = false`
+        : `(name = '${fileNameOrId}' or name = '${baseName}') and trashed = false`;
+
+      const searchRes = await withTimeout(
+        drive.files.list({
+          q: query,
+          fields: 'files(id, name, mimeType)',
+          spaces: 'drive',
+          pageSize: 1
+        })
+      );
 
       if (searchRes.data.files && searchRes.data.files.length > 0) {
         targetFileId = searchRes.data.files[0].id;
+      } else if (!fileNameOrId.includes('.') && !fileNameOrId.includes('/') && fileNameOrId.length >= 25 && fileNameOrId.length <= 45) {
+        targetFileId = fileNameOrId;
+      } else {
+        // File does not exist in Google Drive folder!
+        return null;
       }
+    } else {
+      targetFileId = fileNameOrId;
     }
 
-    const response = await drive.files.get(
-      { fileId: targetFileId, alt: 'media' },
-      { responseType: 'stream' }
+    if (!targetFileId) return null;
+
+    const response = await withTimeout(
+      drive.files.get(
+        { fileId: targetFileId, alt: 'media' },
+        { responseType: 'stream' }
+      )
     );
 
     return response.data;
   } catch (error) {
-    console.warn(`⚠️ Could not stream file from Google Drive "${fileNameOrId}":`, error.message);
+    console.warn(`⚠️ Google Drive stream notice for "${fileNameOrId}":`, error.message);
     return null;
   }
 };

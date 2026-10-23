@@ -6,6 +6,8 @@ import jwt from 'jsonwebtoken';
 import { logActivity } from '../utils/logger.js';
 import { invalidateDashboardCache } from '../routes/dashboardRoutes.js';
 import { triggerDebouncedLiveJsonSync } from '../services/backupService.js';
+import { offlineDb } from '../services/offlineDb.js';
+import { mirrorUploadedFile } from '../services/uploadService.js';
 
 // Process-wide Singleton RAM cache for sub-millisecond page loads (<1ms)
 const SALES_CACHE_TTL_MS = 60000; // 60 seconds TTL
@@ -105,6 +107,7 @@ export const createInstallmentSale = async (req, res) => {
     if (req.files && Array.isArray(req.files)) {
       req.files.forEach((file) => {
         const fileUrl = `/uploads/${file.filename}`;
+        mirrorUploadedFile(file.path, file.filename).catch(() => {});
         if (file.fieldname === 'profilePic' || file.fieldname === 'customerPhoto' || file.fieldname === 'photo') {
           profilePic = fileUrl;
         }
@@ -122,6 +125,9 @@ export const createInstallmentSale = async (req, res) => {
             if (idx !== undefined) {
               title = req.body[`docTitle_${idx}`] || req.body[`documents[${idx}][title]`] || title;
             }
+          } else {
+            const idx = documents.length;
+            title = req.body[`docTitle_${idx}`] || req.body[`docTitle[${idx}]`] || req.body.title || file.originalname || `Document ${idx + 1}`;
           }
           documents.push({ title, fileUrl });
         }
@@ -809,21 +815,41 @@ export const uploadSaleDocuments = async (req, res) => {
       return res.status(400).json({ success: false, message: 'No file uploaded' });
     }
 
-    const newDocuments = req.files.map((file, idx) => {
+    const newDocuments = [];
+    for (let idx = 0; idx < req.files.length; idx++) {
+      const file = req.files[idx];
       const fileUrl = `/uploads/${file.filename}`;
-      const title = req.body[`docTitle_${idx}`] || req.body.title || file.originalname || 'Document';
-      return { title, fileUrl };
-    });
+      const title = req.body[`docTitle_${idx}`] || req.body[`docTitle[${idx}]`] || req.body.title || file.originalname || `Document ${idx + 1}`;
+      
+      try {
+        await mirrorUploadedFile(file.path, file.filename);
+      } catch (mirrorErr) {
+        console.warn('mirrorUploadedFile warning:', mirrorErr.message);
+      }
 
-    sale.documents.push(...newDocuments);
-    await sale.save();
+      newDocuments.push({ title, fileUrl });
+    }
+
+    // Atomic $push directly into MongoDB Atlas
+    const updatedSale = await InstallmentSale.findByIdAndUpdate(
+      id,
+      { $push: { documents: { $each: newDocuments } } },
+      { new: true }
+    );
+
+    // Mirror to offlineDb JSON
+    try {
+      if (offlineDb?.installmentSales?.findByIdAndUpdate) {
+        offlineDb.installmentSales.findByIdAndUpdate(id, { $set: { documents: updatedSale.documents } }).catch(() => {});
+      }
+    } catch (e) {}
 
     invalidateSalesCache();
 
     res.json({
       success: true,
       message: 'Document(s) uploaded successfully',
-      documents: sale.documents
+      documents: updatedSale.documents
     });
   } catch (error) {
     console.error('Upload Documents Error:', error.message);
@@ -835,20 +861,50 @@ export const uploadSaleDocuments = async (req, res) => {
 export const deleteSaleDocument = async (req, res) => {
   try {
     const { id, docId } = req.params;
-    const sale = await InstallmentSale.findById(id);
-    if (!sale) {
+
+    const targetObjId = mongoose.Types.ObjectId.isValid(docId) ? new mongoose.Types.ObjectId(docId) : null;
+    const pullCondition = targetObjId 
+      ? { $or: [{ _id: targetObjId }, { _id: docId }] }
+      : { _id: docId };
+
+    let updatedSale = await InstallmentSale.findByIdAndUpdate(
+      id,
+      { $pull: { documents: pullCondition } },
+      { new: true }
+    );
+
+    // Defensive fallback: check if document still exists by ID or fileUrl
+    if (!updatedSale || updatedSale.documents.some(d => d._id?.toString() === docId.toString() || d.fileUrl === docId || d.fileUrl === `/uploads/${docId}`)) {
+      const sale = await InstallmentSale.findById(id);
+      if (sale) {
+        sale.documents = sale.documents.filter(d => 
+          d._id?.toString() !== docId.toString() && 
+          d.fileUrl !== docId && 
+          d.fileUrl !== `/uploads/${docId}`
+        );
+        sale.markModified('documents');
+        await sale.save();
+        updatedSale = sale;
+      }
+    }
+
+    if (!updatedSale) {
       return res.status(404).json({ success: false, message: 'Installment account not found' });
     }
 
-    sale.documents = sale.documents.filter(doc => doc._id.toString() !== docId);
-    await sale.save();
+    // Mirror to offlineDb JSON
+    try {
+      if (offlineDb?.installmentSales?.findByIdAndUpdate) {
+        offlineDb.installmentSales.findByIdAndUpdate(id, { $set: { documents: updatedSale.documents } }).catch(() => {});
+      }
+    } catch (e) {}
 
     invalidateSalesCache();
 
     res.json({
       success: true,
       message: 'Document removed successfully',
-      documents: sale.documents
+      documents: updatedSale.documents
     });
   } catch (error) {
     console.error('Delete Document Error:', error.message);

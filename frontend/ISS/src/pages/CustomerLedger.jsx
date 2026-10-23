@@ -3,7 +3,7 @@ import {
   Search, Phone, MapPin, CreditCard, ShieldCheck, 
   ShoppingBag, Printer, FileText, DollarSign, RefreshCw, Send, PlusCircle, Pencil, X, Save, Hash, FileCheck,
   Lock, Unlock, Eye, EyeOff, AlertCircle, CheckCircle2, UserCheck, Calculator,
-  FolderPlus, Upload, Trash2, ExternalLink, Paperclip, Plus,
+  FolderPlus, Upload, Trash2, ExternalLink, Paperclip, Plus, Download,
   Camera, User, ZoomIn
 } from 'lucide-react';
 import API from '../api/axios';
@@ -470,6 +470,17 @@ export default function CustomerLedger() {
       if (res.data?.success) {
         toast.success('Document(s) kamyabi se attach ho gaye!');
         setNewDocList([{ title: '', file: null }]);
+        if (res.data.documents) {
+          setLedgerData(prev => {
+            if (!prev) return prev;
+            return {
+              ...prev,
+              installmentSales: (prev.installmentSales || []).map(s => 
+                s._id === docSaleId ? { ...s, documents: res.data.documents } : s
+              )
+            };
+          });
+        }
         await handleSearch();
       } else {
         toast.error(res.data?.message || 'Document upload karne me masla aaya');
@@ -491,6 +502,27 @@ export default function CustomerLedger() {
       const res = await API.delete(`/installments/sales/${docSaleId}/documents/${docId}`);
       if (res.data?.success) {
         toast.success('Document delete ho gaya');
+        if (res.data.documents) {
+          setLedgerData(prev => {
+            if (!prev) return prev;
+            return {
+              ...prev,
+              installmentSales: (prev.installmentSales || []).map(s => 
+                s._id === docSaleId ? { ...s, documents: res.data.documents } : s
+              )
+            };
+          });
+        } else {
+          setLedgerData(prev => {
+            if (!prev) return prev;
+            return {
+              ...prev,
+              installmentSales: (prev.installmentSales || []).map(s => 
+                s._id === docSaleId ? { ...s, documents: (s.documents || []).filter(d => d._id !== docId) } : s
+              )
+            };
+          });
+        }
         await handleSearch();
       } else {
         toast.error(res.data?.message || 'Document delete nahi ho saka');
@@ -898,25 +930,41 @@ export default function CustomerLedger() {
                       </div>
                     )}
 
-                    {/* ATTACHED DOCUMENTS WITH CLICKABLE VIEW LINKS */}
+                    {/* ATTACHED DOCUMENTS WITH CLICKABLE VIEW & DOWNLOAD LINKS */}
                     {sale.documents && sale.documents.length > 0 && (
-                      <div className="space-y-1 pt-1">
-                        <span className="text-[10px] text-slate-500 font-medium block">Attached Documents:</span>
-                        <div className="flex flex-wrap gap-1.5">
-                          {sale.documents.map((doc) => (
-                            <a
-                              key={doc._id}
-                              href={getFileUrl(doc.fileUrl)}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="inline-flex items-center gap-1.5 bg-indigo-950/50 hover:bg-indigo-900/60 border border-indigo-800/50 hover:border-indigo-600 text-[10px] text-indigo-300 hover:text-white px-2.5 py-1 rounded-lg transition cursor-pointer shadow-sm"
-                              title="Click to view/download file"
-                            >
-                              <Paperclip className="w-3 h-3 text-indigo-400 shrink-0" />
-                              <span className="font-medium">{doc.title}</span>
-                              <ExternalLink className="w-2.5 h-2.5 opacity-60" />
-                            </a>
-                          ))}
+                      <div className="space-y-1.5 pt-1">
+                        <span className="text-[10px] text-slate-400 font-semibold uppercase tracking-wider block">Attached Documents:</span>
+                        <div className="flex flex-wrap gap-2">
+                          {sale.documents.map((doc) => {
+                            const rawUrl = getFileUrl(doc.fileUrl);
+                            const downloadUrl = `${rawUrl}${rawUrl.includes('?') ? '&' : '?'}download=1&title=${encodeURIComponent(doc.title || 'document')}`;
+                            return (
+                              <div
+                                key={doc._id || doc.fileUrl}
+                                className="inline-flex items-center bg-indigo-950/70 border border-indigo-700/60 rounded-lg overflow-hidden shadow-sm hover:border-indigo-500 transition"
+                              >
+                                <a
+                                  href={rawUrl}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="inline-flex items-center gap-1.5 px-2.5 py-1 text-[11px] text-indigo-200 hover:text-white hover:bg-indigo-800/50 transition"
+                                  title="Click to open/view document"
+                                >
+                                  <Paperclip className="w-3 h-3 text-indigo-400 shrink-0" />
+                                  <span className="font-medium max-w-[140px] sm:max-w-[200px] truncate">{doc.title || 'Document'}</span>
+                                  <ExternalLink className="w-2.5 h-2.5 opacity-70" />
+                                </a>
+                                <a
+                                  href={downloadUrl}
+                                  download={doc.title || 'document'}
+                                  className="px-2 py-1 bg-indigo-900/60 hover:bg-emerald-600 text-indigo-300 hover:text-white border-l border-indigo-700/50 transition flex items-center justify-center"
+                                  title="Download to PC"
+                                >
+                                  <Download className="w-3 h-3" />
+                                </a>
+                              </div>
+                            );
+                          })}
                         </div>
                       </div>
                     )}
@@ -1715,9 +1763,18 @@ export default function CustomerLedger() {
                             target="_blank"
                             rel="noreferrer"
                             className="p-1.5 bg-slate-800 hover:bg-slate-700 text-blue-400 hover:text-blue-300 rounded-lg transition"
-                            title="View / Download"
+                            title="View Document"
                           >
                             <ExternalLink className="w-4 h-4" />
+                          </a>
+
+                          <a
+                            href={`${getFileUrl(doc.fileUrl)}?download=1&title=${encodeURIComponent(doc.title || 'document')}`}
+                            download={doc.title || 'document'}
+                            className="p-1.5 bg-slate-800 hover:bg-emerald-950/60 text-slate-400 hover:text-emerald-400 rounded-lg transition"
+                            title="Download Document"
+                          >
+                            <Download className="w-4 h-4" />
                           </a>
 
                           <button
