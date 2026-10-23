@@ -1059,7 +1059,7 @@ export default function AddInstallmentModal({ onClose, onSuccess }) {
                   </label>
                 </div>
                 <p className="text-[10px] text-slate-400 mt-1">
-                  💡 Invoices aur receipts par yehi pori tareekh "آپ کی آخری قسط [تاریخ] پر ہے" show hogi.
+                  💡 Invoices aur receipts par yehi pori tareekh "آپ کی آخری قسط کی تاریخ [تاریخ] کو ہے" show hogi.
                 </p>
               </div>
 

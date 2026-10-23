@@ -28,7 +28,7 @@ export const parsePromiseDetails = (sale) => {
   const saleDate = sale.createdAt ? new Date(sale.createdAt) : new Date();
   const saleYear = saleDate.getFullYear();
   const saleMonth = saleDate.getMonth();
-  const defaultDueDay = Number(sale.dueDateDay) || 5;
+  const defaultDueDay = Number(sale.dueDateDay) || (sale.createdAt && !isNaN(new Date(sale.createdAt).getTime()) ? new Date(sale.createdAt).getDate() : 10);
 
   const totalAmount = Number(sale.totalAmount || sale.grandTotal || 0);
   const advancePayment = Number(sale.advancePayment || sale.advanceAmount || 0);
@@ -95,6 +95,23 @@ export const parsePromiseDetails = (sale) => {
         }
       }
       const y = parseInt(dayMonthYearMatch[3], 10);
+      targetYear = y < 100 ? 2000 + y : y;
+    }
+  }
+
+  // 3b. Check if "Month DD, YYYY" or "Month DD YYYY", e.g. "October 15, 2028" or "October 15 2028"
+  if (targetYear === null) {
+    const monthDayYearMatch = pStr.match(/^([a-zA-Z]+)\s+(\d{1,2}),?\s+(\d{2,4})$/);
+    if (monthDayYearMatch) {
+      targetDay = parseInt(monthDayYearMatch[2], 10);
+      const mStr = monthDayYearMatch[1].toLowerCase();
+      for (let i = 0; i < 12; i++) {
+        if (mStr.includes(SHORT_MONTHS[i].toLowerCase()) || mStr.includes(MONTH_NAMES[i].toLowerCase())) {
+          targetMonth = i;
+          break;
+        }
+      }
+      const y = parseInt(monthDayYearMatch[3], 10);
       targetYear = y < 100 ? 2000 + y : y;
     }
   }
@@ -218,7 +235,7 @@ export const getPromiseMonthsInfo = (sale, asOfDate = new Date()) => {
   // 2. Target Promise Date
   let targetYear = details.targetYear;
   let targetMonth = details.targetMonth;
-  let targetDay = details.targetDay || Number(sale.dueDateDay) || 5;
+  let targetDay = details.targetDay || Number(sale.dueDateDay) || (sale.createdAt && !isNaN(new Date(sale.createdAt).getTime()) ? new Date(sale.createdAt).getDate() : 10);
 
   if (targetYear === null || targetMonth === null) {
     const duration = details.promisedTotalMonths || Number(sale.totalMonths) || 1;
@@ -279,7 +296,7 @@ export const getPromiseMonthsInfo = (sale, asOfDate = new Date()) => {
 
 /**
  * Generates official Urdu note text prioritizing the selected full final date:
- * "نوٹ: آپ کی آخری قسط [تاریخ] پر ہے۔"
+ * "نوٹ: آپ کی آخری قسط کی تاریخ [تاریخ] کو ہے۔"
  */
 export const formatPromiseUrduNote = (sale, asOfDate = new Date()) => {
   const info = getPromiseMonthsInfo(sale, asOfDate);
@@ -290,8 +307,8 @@ export const formatPromiseUrduNote = (sale, asOfDate = new Date()) => {
   const finalDate = info.finalDateStr || info.promiseMonthStr;
 
   if (info.isExpired) {
-    return `نوٹ: آپ کی آخری قسط کی تاریخ (${finalDate}) گزر چکی ہے۔ مہربانی کر کے بقیہ رقم فوری ادا کریں۔`;
+    return `نوٹ: آپ کی آخری قسط کی تاریخ ${finalDate} کو گزر چکی ہے، مہربانی کر کے بقیہ رقم فوری ادا کریں۔`;
   }
 
-  return `نوٹ: آپ کی آخری قسط ${finalDate} پر ہے۔`;
+  return `نوٹ: آپ کی آخری قسط کی تاریخ ${finalDate} کو ہے۔`;
 };
