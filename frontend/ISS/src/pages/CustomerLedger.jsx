@@ -1972,6 +1972,7 @@ export default function CustomerLedger() {
                       <div className="w-full sm:flex-1">
                         <label className="block text-[10px] text-slate-400 mb-1">Select File (Image / PDF) *</label>
                         <input
+                          key={`file-input-${docFormKey}-${idx}`}
                           type="file"
                           required
                           accept="image/*,.pdf"
