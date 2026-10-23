@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { 
   Search, Phone, MapPin, CreditCard, ShieldCheck, 
   ShoppingBag, Printer, FileText, DollarSign, RefreshCw, Send, PlusCircle, Pencil, X, Save, Hash, FileCheck,
@@ -84,6 +84,8 @@ export default function CustomerLedger() {
   const [newDocList, setNewDocList] = useState([{ title: '', file: null }]);
   const [isUploadingDocs, setIsUploadingDocs] = useState(false);
   const [isDeletingDocId, setIsDeletingDocId] = useState(null);
+  const [docFormKey, setDocFormKey] = useState(0);
+  const uploadDocFormRef = useRef(null);
 
   // Filters state
   const [startDate, setStartDate] = useState('');
@@ -417,6 +419,10 @@ export default function CustomerLedger() {
     }
     setDocSaleId(targetSaleId);
     setNewDocList([{ title: '', file: null }]);
+    setDocFormKey(prev => prev + 1);
+    if (uploadDocFormRef.current) {
+      try { uploadDocFormRef.current.reset(); } catch (e) {}
+    }
     setShowDocModal(true);
   };
 
@@ -446,6 +452,7 @@ export default function CustomerLedger() {
 
   const handleUploadNewDocs = async (e) => {
     e.preventDefault();
+    if (isUploadingDocs) return; // Strict lock against rapid double-clicks
     if (!docSaleId) return;
 
     const validDocs = newDocList.filter(d => d.file !== null);
@@ -469,7 +476,14 @@ export default function CustomerLedger() {
 
       if (res.data?.success) {
         toast.success('Document(s) kamyabi se attach ho gaye!');
+        
+        // 100% Guaranteed Form & File-Input Clearing
         setNewDocList([{ title: '', file: null }]);
+        setDocFormKey(prev => prev + 1);
+        if (uploadDocFormRef.current) {
+          try { uploadDocFormRef.current.reset(); } catch (e) {}
+        }
+
         if (res.data.documents) {
           setLedgerData(prev => {
             if (!prev) return prev;
@@ -1895,7 +1909,12 @@ export default function CustomerLedger() {
               </div>
 
               {/* SECTION B: UPLOAD NEW DOCUMENTS */}
-              <form onSubmit={handleUploadNewDocs} className="bg-slate-950 p-4 sm:p-5 rounded-2xl border border-slate-800 space-y-4">
+              <form 
+                ref={uploadDocFormRef}
+                key={`doc-form-${docFormKey}`}
+                onSubmit={handleUploadNewDocs} 
+                className="bg-slate-950 p-4 sm:p-5 rounded-2xl border border-slate-800 space-y-4"
+              >
                 <div className="flex justify-between items-center border-b border-slate-800 pb-2.5">
                   <h3 className="text-xs font-bold text-indigo-400 uppercase tracking-wider flex items-center gap-1.5">
                     <Upload className="w-4 h-4" /> Upload New Documents
@@ -1937,7 +1956,7 @@ export default function CustomerLedger() {
                 {/* Rows of Document Inputs */}
                 <div className="space-y-3 pt-1">
                   {newDocList.map((row, idx) => (
-                    <div key={idx} className="flex flex-col sm:flex-row items-center gap-2.5 bg-slate-900 p-3 rounded-xl border border-slate-800">
+                    <div key={`row-${docFormKey}-${idx}`} className="flex flex-col sm:flex-row items-center gap-2.5 bg-slate-900 p-3 rounded-xl border border-slate-800">
                       <div className="w-full sm:flex-1">
                         <label className="block text-[10px] text-slate-400 mb-1">Document Title *</label>
                         <input

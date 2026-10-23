@@ -46,79 +46,121 @@ export const getDriveClient = () => {
   return cachedDriveClient;
 };
 
+// In-flight upload promise lock to prevent concurrent duplicate uploads for the exact same file
+const inFlightUploads = new Map();
+
 /**
- * Upload a file directly to the user's 200GB Google One Drive folder
+ * Upload a file directly to the user's 200GB Google One Drive folder with duplicate prevention
  */
 export const uploadToGoogleDrive = async (filePath, customFileName = null, mimeType = null) => {
-  try {
-    const drive = getDriveClient();
-    if (!drive) {
-      console.warn('⚠️ Google Drive not configured. Skipping cloud upload.');
-      return null;
-    }
+  const fileName = customFileName || path.basename(filePath);
 
-    if (!fs.existsSync(filePath)) {
-      console.warn(`⚠️ File not found for Drive upload: ${filePath}`);
-      return null;
-    }
-
-    const fileName = customFileName || path.basename(filePath);
-    const folderId = process.env.GOOGLE_DRIVE_FOLDER_ID;
-
-    // Detect MIME type if not provided
-    let detectedMime = mimeType;
-    if (!detectedMime) {
-      const ext = path.extname(fileName).toLowerCase();
-      if (ext === '.webp') detectedMime = 'image/webp';
-      else if (ext === '.jpg' || ext === '.jpeg') detectedMime = 'image/jpeg';
-      else if (ext === '.png') detectedMime = 'image/png';
-      else if (ext === '.pdf') detectedMime = 'application/pdf';
-      else if (ext === '.doc' || ext === '.docx') detectedMime = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
-      else detectedMime = 'application/octet-stream';
-    }
-
-    const fileMetadata = {
-      name: fileName,
-      parents: [folderId]
-    };
-
-    const media = {
-      mimeType: detectedMime,
-      body: fs.createReadStream(filePath)
-    };
-
-    const res = await drive.files.create({
-      resource: fileMetadata,
-      media: media,
-      fields: 'id, name, webViewLink, webContentLink, size'
-    });
-
-    const fileData = res.data;
-
-    // Set permission to reader so web applications can render images directly
-    try {
-      await drive.permissions.create({
-        fileId: fileData.id,
-        requestBody: { role: 'reader', type: 'anyone' }
-      });
-    } catch (permErr) {
-      // Permission might already be inherited from folder
-    }
-
-    console.log(`☁️ [200GB Google Drive Upload Success]: "${fileName}" (ID: ${fileData.id})`);
-
-    return {
-      success: true,
-      fileId: fileData.id,
-      name: fileData.name,
-      webViewLink: fileData.webViewLink,
-      webContentLink: fileData.webContentLink,
-      directLink: `https://lh3.googleusercontent.com/d/${fileData.id}`
-    };
-  } catch (error) {
-    console.error(`❌ Google Drive upload error for "${customFileName || filePath}":`, error.message);
-    return null;
+  // If this exact file is currently being uploaded in parallel, reuse the existing promise
+  if (inFlightUploads.has(fileName)) {
+    console.log(`⏳ Reusing active in-flight upload promise for: "${fileName}"`);
+    return await inFlightUploads.get(fileName);
   }
+
+  const uploadPromise = (async () => {
+    try {
+      const drive = getDriveClient();
+      if (!drive) {
+        console.warn('⚠️ Google Drive not configured. Skipping cloud upload.');
+        return null;
+      }
+
+      if (!fs.existsSync(filePath)) {
+        console.warn(`⚠️ File not found for Drive upload: ${filePath}`);
+        return null;
+      }
+
+      const folderId = process.env.GOOGLE_DRIVE_FOLDER_ID;
+
+      // 1. DEDUPLICATION CHECK: Check if a file with this exact filename already exists in the cloud folder
+      try {
+        const existingCheck = await drive.files.list({
+          q: `'${folderId}' in parents and name = '${fileName}' and trashed = false`,
+          fields: 'files(id, name, webViewLink, webContentLink, size)',
+          spaces: 'drive',
+          pageSize: 1
+        });
+
+        if (existingCheck.data.files && existingCheck.data.files.length > 0) {
+          const existingFile = existingCheck.data.files[0];
+          console.log(`⚡ [Google Drive Dedup]: File "${fileName}" already exists in cloud folder (ID: ${existingFile.id}). Skipping duplicate!`);
+          return {
+            success: true,
+            fileId: existingFile.id,
+            name: existingFile.name,
+            webViewLink: existingFile.webViewLink,
+            webContentLink: existingFile.webContentLink,
+            directLink: `https://lh3.googleusercontent.com/d/${existingFile.id}`
+          };
+        }
+      } catch (checkErr) {
+        console.warn('Google Drive duplicate check notice:', checkErr.message);
+      }
+
+      // Detect MIME type if not provided
+      let detectedMime = mimeType;
+      if (!detectedMime) {
+        const ext = path.extname(fileName).toLowerCase();
+        if (ext === '.webp') detectedMime = 'image/webp';
+        else if (ext === '.jpg' || ext === '.jpeg') detectedMime = 'image/jpeg';
+        else if (ext === '.png') detectedMime = 'image/png';
+        else if (ext === '.pdf') detectedMime = 'application/pdf';
+        else if (ext === '.doc' || ext === '.docx') detectedMime = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+        else detectedMime = 'application/octet-stream';
+      }
+
+      const fileMetadata = {
+        name: fileName,
+        parents: [folderId]
+      };
+
+      const media = {
+        mimeType: detectedMime,
+        body: fs.createReadStream(filePath)
+      };
+
+      const res = await drive.files.create({
+        resource: fileMetadata,
+        media: media,
+        fields: 'id, name, webViewLink, webContentLink, size'
+      });
+
+      const fileData = res.data;
+
+      // Set permission to reader so web applications can render images directly
+      try {
+        await drive.permissions.create({
+          fileId: fileData.id,
+          requestBody: { role: 'reader', type: 'anyone' }
+        });
+      } catch (permErr) {
+        // Permission might already be inherited from folder
+      }
+
+      console.log(`☁️ [200GB Google Drive Upload Success]: "${fileName}" (ID: ${fileData.id})`);
+
+      return {
+        success: true,
+        fileId: fileData.id,
+        name: fileData.name,
+        webViewLink: fileData.webViewLink,
+        webContentLink: fileData.webContentLink,
+        directLink: `https://lh3.googleusercontent.com/d/${fileData.id}`
+      };
+    } catch (error) {
+      console.error(`❌ Google Drive upload error for "${customFileName || filePath}":`, error.message);
+      return null;
+    } finally {
+      inFlightUploads.delete(fileName);
+    }
+  })();
+
+  inFlightUploads.set(fileName, uploadPromise);
+  return await uploadPromise;
 };
 
 /**

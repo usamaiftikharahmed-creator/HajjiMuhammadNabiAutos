@@ -159,8 +159,9 @@ export const mirrorUploadedFile = async (filePath, filename) => {
     }
   }
 
-  // 3. Fallback: Copy to mounted Google Drive letter if exists
-  if (fs.existsSync('G:\\My Drive')) {
+  // 3. Fallback: Copy to mounted Google Drive letter ONLY if cloud API is not configured
+  // (Prevents Google Drive Desktop app from uploading a duplicate copy of the same file)
+  if (!isGoogleDriveConfigured() && fs.existsSync('G:\\My Drive')) {
     try {
       if (!fs.existsSync(GDRIVE_UPLOADS_DIR)) fs.mkdirSync(GDRIVE_UPLOADS_DIR, { recursive: true });
       const gDriveTarget = path.join(GDRIVE_UPLOADS_DIR, filename);
