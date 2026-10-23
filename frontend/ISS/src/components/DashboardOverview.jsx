@@ -131,14 +131,13 @@ export default function DashboardOverview({ setActiveTab, userName }) {
 
     const message = 
       `*TODAY'S INSTALLMENT DUE REMINDER - HAJJI MOHAMMAD NABI AUTOS*\n\n` +
-      `Dear *${customerName}* (${customerId}),\n\n` +
-      `Your monthly installment for *${sale.itemName || sale.productName || 'Item'}*${regStr} of *Rs. ${monthlyVal.toLocaleString()}* is due today.\n\n` +
-      `Kindly deposit your installment at our store today or via online transfer:\n` +
+      `Aap ki *${sale.itemName || sale.productName || 'Item'}*${regStr} ki monthly kist *Rs. ${monthlyVal.toLocaleString()}* aaj due hai.\n\n` +
+      `Meharbani kar ke apni kist jama karwa dein ya online send kar dein:\n` +
       `📲 *03232200325* (EasyPaisa)\n` +
       `📲 *03030246040* (JazzCash)\n\n` +
       `*Remaining Balance:* Rs. ${remainingVal.toLocaleString()}\n\n` +
       `*Shop Address:* Shop # 14, Sector 16-B, Main Godhra Stop New Karachi\n` +
-      `Thank you!`;
+      `Shukriya!`;
 
     window.open(`https://wa.me/${formattedPhone}?text=${encodeURIComponent(message)}`, '_blank');
   };

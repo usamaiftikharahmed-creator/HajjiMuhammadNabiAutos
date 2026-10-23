@@ -41,6 +41,7 @@ export default function A4ReceiptModal({ saleData, paymentData, onClose }) {
   const totalMonths = promiseInfo.totalMonths;
   const remainingMonths = promiseInfo.remainingMonths;
   const promiseMonthStr = promiseInfo.promiseMonthStr;
+  const finalDateStr = promiseInfo.finalDateStr || promiseInfo.promiseMonthStr;
 
   const receiptNo = paymentData?._id 
     ? `REC-${String(paymentData._id).slice(-6).toUpperCase()}` 
@@ -79,7 +80,7 @@ export default function A4ReceiptModal({ saleData, paymentData, onClose }) {
       `*Advance Paid:* Rs. ${advanceVal.toLocaleString()}\n` +
       `*Remaining Balance:* Rs. ${remainingBal.toLocaleString()}\n` +
       `*Monthly Installment:* Rs. ${monthlyVal.toLocaleString()} (${totalMonths} Months Plan)\n` +
-      (promiseMonthStr ? `*Promise Month (Aakhri Kist):* ${promiseMonthStr}\n` : '') +
+      (finalDateStr ? `*Aakhri Kist Ki Tareekh:* ${finalDateStr}\n` : '') +
       `*Remaining Months:* ${remainingMonths} Months\n` +
       `*Next Due Date:* ${nextDueDateFormatted}\n` +
       `----------------------------------------\n` +
@@ -260,9 +261,9 @@ export default function A4ReceiptModal({ saleData, paymentData, onClose }) {
                 <p className="text-sm font-bold text-slate-900">
                   Rs. {monthlyVal.toLocaleString()} / Month ({totalMonths} Months Plan)
                 </p>
-                {promiseMonthStr && (
+                {finalDateStr && (
                   <p className="text-[10px] font-bold text-amber-800 font-mono">
-                    Promise Target: {promiseMonthStr}
+                    Aakhri Kist (Final Date): {finalDateStr}
                   </p>
                 )}
               </div>

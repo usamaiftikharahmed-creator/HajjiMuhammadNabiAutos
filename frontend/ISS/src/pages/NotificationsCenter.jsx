@@ -214,8 +214,8 @@ export default function NotificationsCenter({ setActiveTab }) {
     }
 
     const message = item.notifType === 'promise' 
-      ? `*PAYMENT PROMISE REMINDER - HAJJI MOHAMMAD NABI AUTOS*\n\nDear *${item.customerName}* (${item.customerId}),\nAap ne *${item.itemName}* ki installment k silsilay me *${item.dateStr}* ka wada farmaya tha.\nMonthly Kist: *Rs. ${item.amount.toLocaleString()}*.\n\n📍 *Shop Address:* Shop # 14, Sector 16-B, Main Godhra Stop New Karachi\n📲 *03232200325* (EasyPaisa)\n📲 *03030246040* (JazzCash)\nShukriya!`
-      : `*TODAY'S INSTALLMENT DUE REMINDER - HAJJI MOHAMMAD NABI AUTOS*\n\nDear *${item.customerName}* (${item.customerId}),\nAap ki *${item.itemName}* ki monthly kist *Rs. ${item.amount.toLocaleString()}* aaj due hai.\n\n📍 *Shop Address:* Shop # 14, Sector 16-B, Main Godhra Stop New Karachi\n📲 *03232200325* (EasyPaisa)\n📲 *03030246040* (JazzCash)\nShukriya!`;
+      ? `*PAYMENT PROMISE REMINDER - HAJJI MOHAMMAD NABI AUTOS*\n\nDear *${item.customerName}* (${item.customerId}),\nAap ne *${item.itemName}* ki installment k silsilay me *${item.dateStr}* ka wada farmaya tha.\nMonthly Kist: *Rs. ${item.amount.toLocaleString()}*.\n\nMeharbani kar ke apni kist jama karwa dein ya online send kar dein:\n📲 *03232200325* (EasyPaisa)\n📲 *03030246040* (JazzCash)\n\n📍 *Shop Address:* Shop # 14, Sector 16-B, Main Godhra Stop New Karachi\nShukriya!`
+      : `*TODAY'S INSTALLMENT DUE REMINDER - HAJJI MOHAMMAD NABI AUTOS*\n\nDear *${item.customerName}* (${item.customerId}),\nAap ki *${item.itemName}* ki monthly kist *Rs. ${item.amount.toLocaleString()}* aaj due hai.\n\nMeharbani kar ke apni kist jama karwa dein ya online send kar dein:\n📲 *03232200325* (EasyPaisa)\n📲 *03030246040* (JazzCash)\n\n📍 *Shop Address:* Shop # 14, Sector 16-B, Main Godhra Stop New Karachi\nShukriya!`;
 
     window.open(`https://wa.me/${rawPhone}?text=${encodeURIComponent(message)}`, '_blank');
   };

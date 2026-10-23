@@ -331,7 +331,7 @@ export default function RecoveryManager() {
       `*Total Overdue Amount:* Rs. ${item.totalMissedAmount.toLocaleString()}\n` +
       `*Monthly Target:* Rs. ${item.monthlyAmount?.toLocaleString()}\n` +
       `*Remaining Total Balance:* Rs. ${item.remainingBalance?.toLocaleString()}\n\n` +
-      `Meharbani karke foran dukan par tashreef layein ya online send karein:\n` +
+      `Meharbani kar ke apni kist jama karwa dein ya online send kar dein:\n` +
       `📲 *03232200325* (EasyPaisa)\n` +
       `📲 *03030246040* (JazzCash)\n\n` +
       `*Shop Address:* Shop # 14, Sector 16-B, Main Godhra Stop New Karachi\n` +

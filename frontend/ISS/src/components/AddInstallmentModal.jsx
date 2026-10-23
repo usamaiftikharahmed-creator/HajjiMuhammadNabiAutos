@@ -39,6 +39,7 @@ export default function AddInstallmentModal({ onClose, onSuccess }) {
     totalMonths: '',
     promiseMonth: '',
     promisedMonths: '',
+    promiseDate: '',
     dueDateDay: '5',
     paymentMode: 'Cash'
   });
@@ -153,9 +154,10 @@ export default function AddInstallmentModal({ onClose, onSuccess }) {
   const getPromiseMonthFromMonths = (months) => {
     const m = parseInt(months, 10);
     if (!m || m <= 0) return '';
-    const d = new Date();
-    d.setMonth(d.getMonth() + m);
-    return `${MONTH_NAMES[d.getMonth()]} ${d.getFullYear()}`;
+    const day = parseInt(formData.dueDateDay, 10) || 5;
+    const booking = formData.bookingDate ? new Date(formData.bookingDate) : new Date();
+    const d = new Date(booking.getFullYear(), booking.getMonth() + m, day);
+    return `${d.getDate()} ${MONTH_NAMES[d.getMonth()]} ${d.getFullYear()}`;
   };
 
   const getMonthsFromPromiseMonth = (val) => {
@@ -254,11 +256,38 @@ export default function AddInstallmentModal({ onClose, onSuccess }) {
     setFormData(updated);
   };
 
-  // Promise Month Handler: Customer's explicit commitment (e.g. 24 Months / October 2028).
-  // Strictly does NOT overwrite monthlyKist (e.g. Rs. 20,000 remains untouched).
+  // Final Installment Date / Promise Date Handler
+  const handlePromiseDateChange = (val) => {
+    if (!val) {
+      setFormData(prev => ({ ...prev, promiseMonth: '', promisedMonths: '', promiseDate: '' }));
+      return;
+    }
+
+    const ymd = val.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (ymd) {
+      const year = parseInt(ymd[1], 10);
+      const monthIdx = parseInt(ymd[2], 10) - 1;
+      const day = parseInt(ymd[3], 10);
+      const formattedDate = `${day} ${MONTH_NAMES[monthIdx]} ${year}`;
+      const saleDate = formData.bookingDate ? new Date(formData.bookingDate) : new Date();
+      const diff = (year - saleDate.getFullYear()) * 12 + (monthIdx - saleDate.getMonth());
+      const promisedMonths = diff > 0 ? diff : 1;
+
+      setFormData(prev => ({
+        ...prev,
+        promiseMonth: formattedDate,
+        promisedMonths: promisedMonths.toString(),
+        promiseDate: val
+      }));
+      return;
+    }
+
+    handlePromiseMonthChange(val);
+  };
+
   const handlePromiseMonthChange = (val) => {
     if (!val) {
-      setFormData(prev => ({ ...prev, promiseMonth: '', promisedMonths: '' }));
+      setFormData(prev => ({ ...prev, promiseMonth: '', promisedMonths: '', promiseDate: '' }));
       return;
     }
 
@@ -277,9 +306,11 @@ export default function AddInstallmentModal({ onClose, onSuccess }) {
 
     const res = getMonthsFromPromiseMonth(val);
     if (res) {
+      const day = parseInt(formData.dueDateDay, 10) || 5;
+      const fullDateStr = `${day} ${res.formattedMonth}`;
       setFormData(prev => ({
         ...prev,
-        promiseMonth: res.formattedMonth,
+        promiseMonth: fullDateStr,
         promisedMonths: res.diff.toString()
       }));
     } else {
@@ -990,11 +1021,11 @@ export default function AddInstallmentModal({ onClose, onSuccess }) {
                 />
               </div>
 
-              {/* Promise Month Input (Customer's Commitment - Top Priority for Invoices) */}
+              {/* Final Installment Date Input (Top Priority for Invoices) */}
               <div>
                 <div className="flex justify-between items-center mb-1">
                   <label className="text-slate-300 font-medium">
-                    Promise Month / وعدہ مہینہ <span className="text-[10px] text-amber-400 font-bold">(Invoices Priority ⭐ / رسیدوں پر ترجیح)</span>
+                    Final Installment Date / آخری قسط کی تاریخ <span className="text-[10px] text-amber-400 font-bold">(Invoices Priority ⭐ / رسیدوں پر ترجیح)</span>
                   </label>
                   {formData.promiseMonth && (
                     <span className="text-[10px] text-amber-400 font-mono font-bold bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/30">
@@ -1008,19 +1039,19 @@ export default function AddInstallmentModal({ onClose, onSuccess }) {
                     name="promiseMonth"
                     value={formData.promiseMonth}
                     onChange={handleInputChange}
-                    placeholder="e.g. October 2028 ya 24"
+                    placeholder="e.g. 10 October 2028 ya 24"
                     className="w-full bg-slate-900 border border-amber-500/50 rounded-xl pl-3.5 pr-10 py-2 text-white outline-none focus:border-amber-400 text-xs font-mono font-bold"
                   />
                   <label 
-                    title="Calendar se Mahina aur Saal chunein / کیلنڈر سے مہینہ اور سال منتخب کریں"
+                    title="Calendar se Puri Tareekh chunein / کیلنڈر سے پوری تاریخ منتخب کریں"
                     className="absolute right-2.5 flex items-center justify-center cursor-pointer text-slate-400 hover:text-amber-400 transition"
                   >
                     <Calendar className="w-4 h-4 pointer-events-none" />
                     <input
-                      type="month"
+                      type="date"
                       onChange={(e) => {
                         if (e.target.value) {
-                          handlePromiseMonthChange(e.target.value);
+                          handlePromiseDateChange(e.target.value);
                         }
                       }}
                       className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
@@ -1028,7 +1059,7 @@ export default function AddInstallmentModal({ onClose, onSuccess }) {
                   </label>
                 </div>
                 <p className="text-[10px] text-slate-400 mt-1">
-                  💡 Invoices aur receipts par yehi promise commitment show hoga (bina kist badlay).
+                  💡 Invoices aur receipts par yehi pori tareekh "آپ کی آخری قسط [تاریخ] پر ہے" show hogi.
                 </p>
               </div>
 

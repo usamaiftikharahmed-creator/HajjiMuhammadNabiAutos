@@ -4,7 +4,7 @@ import {
   ShoppingBag, Printer, FileText, DollarSign, RefreshCw, Send, PlusCircle, Pencil, X, Save, Hash, FileCheck,
   Lock, Unlock, Eye, EyeOff, AlertCircle, CheckCircle2, UserCheck, Calculator,
   FolderPlus, Upload, Trash2, ExternalLink, Paperclip, Plus, Download,
-  Camera, User, ZoomIn
+  Camera, User, ZoomIn, Calendar
 } from 'lucide-react';
 import API from '../api/axios';
 import toast from 'react-hot-toast';
@@ -595,27 +595,103 @@ export default function CustomerLedger() {
       const res = await fetch(targetUrl);
       if (!res.ok) throw new Error(`Server returned HTTP ${res.status}`);
 
-      const blob = await res.blob();
-      
-      // Determine authentic format extension:
-      let detectedExt = '';
-      if (blob.type === 'application/pdf') detectedExt = '.pdf';
-      else if (blob.type === 'image/png') detectedExt = '.png';
-      else if (blob.type === 'image/webp') detectedExt = '.webp';
-      else if (blob.type === 'image/jpeg') detectedExt = '.jpg';
-      else if (blob.type.includes('word') || blob.type.includes('document')) detectedExt = '.docx';
-      else if (blob.type.includes('sheet') || blob.type.includes('excel')) detectedExt = '.xlsx';
-
-      let finalFilename = cleanFilename;
-      if (detectedExt) {
-        const base = cleanFilename.replace(/\.[^/.]+$/, '').trim() || 'Document';
-        finalFilename = `${base}${detectedExt}`;
-      } else if (!cleanFilename.includes('.')) {
-        finalFilename = `${cleanFilename}.jpg`;
+      // 1. Check Content-Disposition header from server
+      let cdFilename = '';
+      const cdHeader = res.headers.get('content-disposition');
+      if (cdHeader) {
+        const utf8Match = cdHeader.match(/filename\*=UTF-8''([^;]+)/i);
+        if (utf8Match) {
+          cdFilename = decodeURIComponent(utf8Match[1].trim());
+        } else {
+          const fnMatch = cdHeader.match(/filename="?([^";]+)"?/i);
+          if (fnMatch) cdFilename = fnMatch[1].trim();
+        }
       }
 
-      // Trigger true browser file download via Blob URL
-      const blobUrl = window.URL.createObjectURL(blob);
+      const blob = await res.blob();
+      
+      // 2. Direct Magic Byte Inspection from the physical file buffer
+      let detectedExt = '';
+      let mimeType = blob.type || 'application/octet-stream';
+
+      try {
+        const headerBuf = await blob.slice(0, 16).arrayBuffer();
+        const bytes = new Uint8Array(headerBuf);
+
+        // PDF: %PDF
+        if (bytes[0] === 0x25 && bytes[1] === 0x50 && bytes[2] === 0x44 && bytes[3] === 0x46) {
+          detectedExt = '.pdf';
+          mimeType = 'application/pdf';
+        }
+        // PNG: \x89PNG
+        else if (bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4E && bytes[3] === 0x47) {
+          detectedExt = '.png';
+          mimeType = 'image/png';
+        }
+        // JPEG: \xFF\xD8\xFF
+        else if (bytes[0] === 0xFF && bytes[1] === 0xD8 && bytes[2] === 0xFF) {
+          detectedExt = '.jpg';
+          mimeType = 'image/jpeg';
+        }
+        // WebP: RIFF....WEBP
+        else if (bytes[0] === 0x52 && bytes[1] === 0x49 && bytes[2] === 0x46 && bytes[3] === 0x46 &&
+                 bytes[8] === 0x57 && bytes[9] === 0x45 && bytes[10] === 0x42 && bytes[11] === 0x50) {
+          detectedExt = '.webp';
+          mimeType = 'image/webp';
+        }
+        // GIF: GIF8
+        else if (bytes[0] === 0x47 && bytes[1] === 0x49 && bytes[2] === 0x46 && bytes[3] === 0x38) {
+          detectedExt = '.gif';
+          mimeType = 'image/gif';
+        }
+        // ZIP / Office DOCX or XLSX: PK\x03\x04
+        else if (bytes[0] === 0x50 && bytes[1] === 0x4B && bytes[2] === 0x03 && bytes[3] === 0x04) {
+          if (cleanFilename.toLowerCase().endsWith('.xlsx') || (doc.title && doc.title.toLowerCase().endsWith('.xlsx'))) {
+            detectedExt = '.xlsx';
+            mimeType = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+          } else {
+            detectedExt = '.docx';
+            mimeType = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+          }
+        }
+      } catch (byteErr) {
+        console.warn('Magic byte inspection notice:', byteErr);
+      }
+
+      // 3. Fallback to MIME type if magic bytes didn't determine
+      if (!detectedExt) {
+        if (blob.type === 'application/pdf') detectedExt = '.pdf';
+        else if (blob.type === 'image/png') detectedExt = '.png';
+        else if (blob.type === 'image/webp') detectedExt = '.webp';
+        else if (blob.type === 'image/jpeg') detectedExt = '.jpg';
+        else if (blob.type.includes('word') || blob.type.includes('document')) detectedExt = '.docx';
+        else if (blob.type.includes('sheet') || blob.type.includes('excel')) detectedExt = '.xlsx';
+      }
+
+      // 4. Fallback to Content-Disposition header extension
+      if (!detectedExt && cdFilename && cdFilename.includes('.')) {
+        detectedExt = '.' + cdFilename.split('.').pop().toLowerCase();
+      }
+
+      // 5. Fallback to extension in doc.fileUrl or cleanFilename
+      if (!detectedExt) {
+        const urlDot = (doc.fileUrl || '').split('?')[0].lastIndexOf('.');
+        if (urlDot !== -1) {
+          detectedExt = '.' + doc.fileUrl.split('?')[0].substring(urlDot + 1).toLowerCase();
+        } else if (cleanFilename.includes('.')) {
+          detectedExt = '.' + cleanFilename.split('.').pop().toLowerCase();
+        }
+      }
+
+      if (!detectedExt) detectedExt = '.jpg';
+
+      let finalFilename = cdFilename || cleanFilename;
+      const base = finalFilename.replace(/\.[^/.]+$/, '').trim() || 'Document';
+      finalFilename = `${base}${detectedExt}`;
+
+      // Construct authentic typed blob and trigger native browser download
+      const typedBlob = new Blob([blob], { type: mimeType });
+      const blobUrl = window.URL.createObjectURL(typedBlob);
       const tempLink = document.createElement('a');
       tempLink.href = blobUrl;
       tempLink.download = finalFilename;
@@ -1744,16 +1820,42 @@ export default function CustomerLedger() {
                     </div>
 
                     <div>
-                      <label className="block text-slate-300 mb-1 font-medium">
-                        Promise Month / Commitment <span className="text-[10px] text-amber-400 font-bold">(Priority ⭐)</span>
-                      </label>
-                      <input
-                        type="text"
-                        value={editFormData.promiseMonth}
-                        onChange={(e) => setEditFormData({ ...editFormData, promiseMonth: e.target.value })}
-                        placeholder="e.g. October 2028 ya 24"
-                        className="w-full bg-slate-900 border border-amber-500/50 rounded-xl px-3.5 py-2 text-white outline-none focus:border-amber-400 text-xs font-mono font-bold"
-                      />
+                      <div className="flex justify-between items-center mb-1">
+                        <label className="text-slate-300 font-medium">
+                          Final Installment Date / آخری قسط کی تاریخ <span className="text-[10px] text-amber-400 font-bold">(Invoices Priority ⭐)</span>
+                        </label>
+                      </div>
+                      <div className="relative flex items-center">
+                        <input
+                          type="text"
+                          value={editFormData.promiseMonth}
+                          onChange={(e) => setEditFormData({ ...editFormData, promiseMonth: e.target.value })}
+                          placeholder="e.g. 10 October 2028 ya 24"
+                          className="w-full bg-slate-900 border border-amber-500/50 rounded-xl pl-3.5 pr-10 py-2 text-white outline-none focus:border-amber-400 text-xs font-mono font-bold"
+                        />
+                        <label 
+                          title="Calendar se Puri Tareekh chunein / کیلنڈر سے پوری تاریخ منتخب کریں"
+                          className="absolute right-2.5 flex items-center justify-center cursor-pointer text-slate-400 hover:text-amber-400 transition"
+                        >
+                          <Calendar className="w-4 h-4 pointer-events-none" />
+                          <input
+                            type="date"
+                            onChange={(e) => {
+                              if (e.target.value) {
+                                const ymd = e.target.value.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+                                if (ymd) {
+                                  const monthNames = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+                                  const formatted = `${parseInt(ymd[3], 10)} ${monthNames[parseInt(ymd[2], 10) - 1]} ${ymd[1]}`;
+                                  setEditFormData({ ...editFormData, promiseMonth: formatted });
+                                } else {
+                                  setEditFormData({ ...editFormData, promiseMonth: e.target.value });
+                                }
+                              }
+                            }}
+                            className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
+                          />
+                        </label>
+                      </div>
                     </div>
 
                     <div>

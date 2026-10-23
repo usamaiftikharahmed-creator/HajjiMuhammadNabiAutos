@@ -29,12 +29,31 @@ export default function ViewDetailsModal({ selectedSale, onClose, onRefresh, onO
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const blob = await res.blob();
       let ext = '.jpg';
-      if (blob.type === 'image/png') ext = '.png';
-      else if (blob.type === 'image/webp') ext = '.webp';
-      else if (blob.type === 'application/pdf') ext = '.pdf';
+      let mimeType = blob.type || 'image/jpeg';
+      try {
+        const headerBuf = await blob.slice(0, 16).arrayBuffer();
+        const bytes = new Uint8Array(headerBuf);
+        if (bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4E && bytes[3] === 0x47) {
+          ext = '.png';
+          mimeType = 'image/png';
+        } else if (bytes[0] === 0x52 && bytes[1] === 0x49 && bytes[2] === 0x46 && bytes[3] === 0x46 &&
+                   bytes[8] === 0x57 && bytes[9] === 0x45 && bytes[10] === 0x42 && bytes[11] === 0x50) {
+          ext = '.webp';
+          mimeType = 'image/webp';
+        } else if (bytes[0] === 0x25 && bytes[1] === 0x50 && bytes[2] === 0x44 && bytes[3] === 0x46) {
+          ext = '.pdf';
+          mimeType = 'application/pdf';
+        } else if (blob.type === 'image/png') {
+          ext = '.png';
+        } else if (blob.type === 'image/webp') {
+          ext = '.webp';
+        }
+      } catch (e) {}
+
       const finalName = `${photoName}${ext}`;
 
-      const blobUrl = window.URL.createObjectURL(blob);
+      const typedBlob = new Blob([blob], { type: mimeType });
+      const blobUrl = window.URL.createObjectURL(typedBlob);
       const link = document.createElement('a');
       link.href = blobUrl;
       link.download = finalName;
