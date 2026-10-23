@@ -182,13 +182,15 @@ export const getFileStreamFromGoogleDrive = async (fileNameOrId) => {
       return Promise.race([promise, timeoutPromise]).finally(() => clearTimeout(timer));
     };
 
+    let targetFileMeta = null;
+
     // If it looks like a filename, search by name in folder
     if (fileNameOrId.includes('.') || fileNameOrId.length > 20) {
       const folderId = process.env.GOOGLE_DRIVE_FOLDER_ID;
       const baseName = fileNameOrId.includes('.') ? fileNameOrId.replace(/\.[^/.]+$/, "") : fileNameOrId;
       const query = folderId
-        ? `'${folderId}' in parents and (name = '${fileNameOrId}' or name = '${baseName}') and trashed = false`
-        : `(name = '${fileNameOrId}' or name = '${baseName}') and trashed = false`;
+        ? `'${folderId}' in parents and (name = '${fileNameOrId}' or name = '${baseName}' or name contains '${baseName}') and trashed = false`
+        : `(name = '${fileNameOrId}' or name = '${baseName}' or name contains '${baseName}') and trashed = false`;
 
       const searchRes = await withTimeout(
         drive.files.list({
@@ -200,7 +202,8 @@ export const getFileStreamFromGoogleDrive = async (fileNameOrId) => {
       );
 
       if (searchRes.data.files && searchRes.data.files.length > 0) {
-        targetFileId = searchRes.data.files[0].id;
+        targetFileMeta = searchRes.data.files[0];
+        targetFileId = targetFileMeta.id;
       } else if (!fileNameOrId.includes('.') && !fileNameOrId.includes('/') && fileNameOrId.length >= 25 && fileNameOrId.length <= 45) {
         targetFileId = fileNameOrId;
       } else {
@@ -220,7 +223,10 @@ export const getFileStreamFromGoogleDrive = async (fileNameOrId) => {
       )
     );
 
-    return response.data;
+    return {
+      stream: response.data,
+      fileMeta: targetFileMeta
+    };
   } catch (error) {
     console.warn(`⚠️ Google Drive stream notice for "${fileNameOrId}":`, error.message);
     return null;

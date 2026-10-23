@@ -83,7 +83,8 @@ app.use(cors({
       callback(null, true);
     }
   }, 
-  credentials: true 
+  credentials: true,
+  exposedHeaders: ['Content-Disposition']
 }));
 app.use(express.json({ limit: '50mb' }));
 app.use(cookieParser());
@@ -142,7 +143,7 @@ app.use(async (req, res, next) => {
   next();
 });
 
-import { getUploadDirs, detectMimeType, findUploadedFile } from './services/uploadService.js';
+import { getUploadDirs, detectMimeType, detectFileExtension, findUploadedFile } from './services/uploadService.js';
 
 // Explicit image / document delivery and download with Google Drive Cloud fallback
 app.get(['/uploads/:filename', '/api/installments/download/:filename'], async (req, res) => {
@@ -157,6 +158,7 @@ app.get(['/uploads/:filename', '/api/installments/download/:filename'], async (r
   const localFilePath = findUploadedFile(filename);
 
   if (localFilePath) {
+    const realExt = detectFileExtension(localFilePath, filename);
     const mimeType = detectMimeType(localFilePath, filename);
     res.setHeader('Content-Type', mimeType);
     res.setHeader('Cache-Control', 'public, max-age=86400');
@@ -164,15 +166,14 @@ app.get(['/uploads/:filename', '/api/installments/download/:filename'], async (r
     // Check if download is explicitly requested
     const isDownload = req.query.download === '1' || req.query.download === 'true' || req.path.includes('/download/');
     if (isDownload) {
-      let downloadTitle = (req.query.title ? String(req.query.title).trim() : path.basename(localFilePath));
-      // Ensure file has an appropriate extension for saving to PC
-      if (!path.extname(downloadTitle)) {
-        if (mimeType === 'application/pdf') downloadTitle += '.pdf';
-        else if (mimeType === 'image/webp') downloadTitle += '.webp';
-        else if (mimeType === 'image/png') downloadTitle += '.png';
-        else if (mimeType === 'image/jpeg') downloadTitle += '.jpg';
-      }
-      res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(downloadTitle)}"; filename*=UTF-8''${encodeURIComponent(downloadTitle)}`);
+      let titleBase = req.query.title ? String(req.query.title).trim() : path.basename(localFilePath);
+      // Strip any extension attached to titleBase so we don't end up with duplicate or mismatched extensions
+      titleBase = titleBase.replace(/\.[^/.]+$/, '').trim();
+      if (!titleBase) titleBase = 'document';
+
+      const downloadFilename = `${titleBase}${realExt}`;
+      const safeAscii = downloadFilename.replace(/[^\x20-\x7E]/g, '_').replace(/["\\]/g, '_');
+      res.setHeader('Content-Disposition', `attachment; filename="${safeAscii}"; filename*=UTF-8''${encodeURIComponent(downloadFilename)}`);
     } else {
       res.setHeader('Content-Disposition', `inline; filename="${encodeURIComponent(filename)}"`);
     }
@@ -182,26 +183,45 @@ app.get(['/uploads/:filename', '/api/installments/download/:filename'], async (r
 
   // 2. Fallback: If not on local disk, try Google Drive with a fast 3.5s timeout
   try {
-    const driveStream = await getFileStreamFromGoogleDrive(filename);
-    if (driveStream) {
-      const ext = path.extname(filename).toLowerCase();
-      let mimeType = 'application/octet-stream';
-      if (ext === '.pdf') mimeType = 'application/pdf';
-      else if (ext === '.webp') mimeType = 'image/webp';
-      else if (ext === '.png') mimeType = 'image/png';
-      else if (ext === '.jpg' || ext === '.jpeg') mimeType = 'image/jpeg';
+    const driveResult = await getFileStreamFromGoogleDrive(filename);
+    if (driveResult) {
+      const driveStream = driveResult.stream || driveResult;
+      const driveMeta = driveResult.fileMeta;
+
+      const driveFileName = driveMeta?.name || filename;
+      const driveMime = driveMeta?.mimeType;
+
+      let realExt = detectFileExtension('', driveFileName);
+      if (!realExt || realExt === '.jpg') {
+        if (driveMime === 'application/pdf') realExt = '.pdf';
+        else if (driveMime === 'image/png') realExt = '.png';
+        else if (driveMime === 'image/webp') realExt = '.webp';
+        else if (driveMime === 'image/jpeg') realExt = '.jpg';
+        else if (driveMime?.includes('word')) realExt = '.docx';
+        else if (driveMime?.includes('sheet')) realExt = '.xlsx';
+      }
+
+      const mimeType = driveMime || detectMimeType('', driveFileName);
 
       res.setHeader('Content-Type', mimeType);
       res.setHeader('Cache-Control', 'public, max-age=86400');
 
       const isDownload = req.query.download === '1' || req.query.download === 'true' || req.path.includes('/download/');
-      const downloadTitle = req.query.title ? String(req.query.title).trim() : filename;
-      res.setHeader(
-        'Content-Disposition',
-        isDownload 
-          ? `attachment; filename="${encodeURIComponent(downloadTitle)}"` 
-          : `inline; filename="${encodeURIComponent(filename)}"`
-      );
+      if (isDownload) {
+        let titleBase = req.query.title ? String(req.query.title).trim() : path.basename(driveFileName);
+        titleBase = titleBase.replace(/\.[^/.]+$/, '').trim();
+        if (!titleBase) titleBase = 'document';
+
+        const downloadFilename = `${titleBase}${realExt}`;
+        const safeAscii = downloadFilename.replace(/[^\x20-\x7E]/g, '_').replace(/["\\]/g, '_');
+
+        res.setHeader(
+          'Content-Disposition',
+          `attachment; filename="${safeAscii}"; filename*=UTF-8''${encodeURIComponent(downloadFilename)}`
+        );
+      } else {
+        res.setHeader('Content-Disposition', `inline; filename="${encodeURIComponent(filename)}"`);
+      }
 
       return driveStream.pipe(res);
     }

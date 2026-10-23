@@ -13,15 +13,29 @@ export const compressImage = (file, options = {}) => {
       return resolve(file);
     }
 
-    const isImage = file.type && file.type.startsWith('image/');
-    if (!isImage) {
+    // Only compress standard raster photos (JPEG, PNG, WEBP)
+    // Non-raster or documents (PDF, DOCX, XLSX, SVG, GIF) must pass through completely untouched!
+    const fileType = (file.type || '').toLowerCase();
+    const isCompressible = 
+      fileType === 'image/jpeg' || 
+      fileType === 'image/jpg' || 
+      fileType === 'image/png' || 
+      fileType === 'image/webp';
+
+    if (!isCompressible) {
       return resolve(file);
     }
 
     const maxWidth = options.maxWidth || 1600;
     const maxHeight = options.maxHeight || 1600;
     const quality = options.quality !== undefined ? options.quality : 0.8;
-    const outputType = options.mimeType || 'image/jpeg';
+    
+    // Maintain EXACT uploaded image format (PNG stays PNG, WEBP stays WEBP, JPEG stays JPEG)
+    const outputType = options.mimeType || (
+      fileType === 'image/png' ? 'image/png' :
+      fileType === 'image/webp' ? 'image/webp' :
+      'image/jpeg'
+    );
 
     const reader = new FileReader();
 
@@ -31,6 +45,11 @@ export const compressImage = (file, options = {}) => {
       img.onload = () => {
         try {
           let { width, height } = img;
+
+          // If image is already smaller than max bounds and small size, avoid redundant re-compression
+          if (width <= maxWidth && height <= maxHeight && file.size < 500 * 1024) {
+            return resolve(file);
+          }
 
           // Scale down proportionally if image exceeds max bounds
           if (width > maxWidth || height > maxHeight) {
@@ -59,15 +78,24 @@ export const compressImage = (file, options = {}) => {
                 return resolve(file);
               }
 
-              // Construct a new File preserving original name
-              const fileName = file.name || 'compressed_image.jpg';
+              // Construct a new File preserving original format & extension
+              const originalExt = (file.name ? file.name.split('.').pop().toLowerCase() : '') || 'jpg';
+              let cleanExt = 'jpg';
+              if (outputType === 'image/png') cleanExt = 'png';
+              else if (outputType === 'image/webp') cleanExt = 'webp';
+              else if (originalExt === 'jpeg') cleanExt = 'jpeg';
+              else cleanExt = 'jpg';
+
+              const baseName = (file.name || 'image').replace(/\.[^/.]+$/, "");
+              const fileName = `${baseName}.${cleanExt}`;
+
               const compressedFile = new File([blob], fileName, {
                 type: outputType,
                 lastModified: Date.now()
               });
 
               console.log(
-                `⚡ [Client-side Compressed]: "${fileName}" ` +
+                `⚡ [Client-side Optimized]: "${fileName}" ` +
                 `(${Math.round(file.size / 1024)} KB -> ${Math.round(compressedFile.size / 1024)} KB)`
               );
 

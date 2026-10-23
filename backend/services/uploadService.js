@@ -81,15 +81,21 @@ const storage = multer.diskStorage({
   filename: function (req, file, cb) {
     const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
     let ext = path.extname(file.originalname || '').toLowerCase();
+    if (ext === '.jfif') ext = '.jpg';
     
-    // If extension is missing, infer from mimetype
+    // If extension is missing, infer accurately from mimetype
     if (!ext || ext === '') {
       if (file.mimetype === 'application/pdf') ext = '.pdf';
-      else if (file.mimetype === 'image/webp') ext = '.webp';
       else if (file.mimetype === 'image/png') ext = '.png';
-      else if (file.mimetype === 'image/jpeg') ext = '.jpg';
+      else if (file.mimetype === 'image/webp') ext = '.webp';
+      else if (file.mimetype === 'image/gif') ext = '.gif';
+      else if (file.mimetype === 'image/svg+xml') ext = '.svg';
+      else if (file.mimetype === 'image/jpeg' || file.mimetype === 'image/jpg') ext = '.jpg';
       else if (file.mimetype && file.mimetype.includes('word')) ext = '.docx';
       else if (file.mimetype && file.mimetype.includes('sheet')) ext = '.xlsx';
+      else if (file.mimetype === 'text/plain') ext = '.txt';
+      else if (file.mimetype === 'text/csv') ext = '.csv';
+      else if (file.mimetype?.startsWith('image/')) ext = '.jpg';
       else ext = '.jpg';
     }
     
@@ -201,24 +207,82 @@ export const detectMimeType = (filePath, originalFilename = '') => {
   if (ext === '.pdf') return 'application/pdf';
   if (ext === '.webp') return 'image/webp';
   if (ext === '.png') return 'image/png';
-  if (ext === '.jpg' || ext === '.jpeg') return 'image/jpeg';
+  if (ext === '.jpg' || ext === '.jpeg' || ext === '.jfif') return 'image/jpeg';
   if (ext === '.svg') return 'image/svg+xml';
+  if (ext === '.gif') return 'image/gif';
+  if (ext === '.bmp') return 'image/bmp';
+  if (ext === '.txt') return 'text/plain';
+  if (ext === '.csv') return 'text/csv';
   if (ext === '.doc' || ext === '.docx') return 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
   if (ext === '.xls' || ext === '.xlsx') return 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
 
   try {
-    const fd = fs.openSync(filePath, 'r');
-    const buffer = Buffer.alloc(16);
-    fs.readSync(fd, buffer, 0, 16, 0);
-    fs.closeSync(fd);
+    if (filePath && fs.existsSync(filePath)) {
+      const fd = fs.openSync(filePath, 'r');
+      const buffer = Buffer.alloc(16);
+      fs.readSync(fd, buffer, 0, 16, 0);
+      fs.closeSync(fd);
 
-    if (buffer.slice(0, 4).toString() === '%PDF') return 'application/pdf';
-    if (buffer[0] === 0x89 && buffer[1] === 0x50 && buffer[2] === 0x4E && buffer[3] === 0x47) return 'image/png';
-    if (buffer[0] === 0xFF && buffer[1] === 0xD8 && buffer[2] === 0xFF) return 'image/jpeg';
-    if (buffer.slice(0, 4).toString() === 'RIFF' && buffer.slice(8, 12).toString() === 'WEBP') return 'image/webp';
+      if (buffer.slice(0, 4).toString() === '%PDF') return 'application/pdf';
+      if (buffer[0] === 0x89 && buffer[1] === 0x50 && buffer[2] === 0x4E && buffer[3] === 0x47) return 'image/png';
+      if (buffer[0] === 0xFF && buffer[1] === 0xD8 && buffer[2] === 0xFF) return 'image/jpeg';
+      if (buffer.slice(0, 4).toString() === 'RIFF' && buffer.slice(8, 12).toString() === 'WEBP') return 'image/webp';
+      if (buffer.slice(0, 4).toString() === 'GIF8') return 'image/gif';
+      if (buffer[0] === 0x42 && buffer[1] === 0x4D) return 'image/bmp';
+      if (buffer[0] === 0x50 && buffer[1] === 0x4B && buffer[2] === 0x03 && buffer[3] === 0x04) {
+        return 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+      }
+    }
   } catch (e) {}
 
   return 'application/octet-stream';
+};
+
+/**
+ * Accurately detect the real file extension (.pdf, .png, .jpg, .webp, .docx, .xlsx, etc.)
+ * by checking originalFilename, filePath, or inspecting magic bytes directly from disk.
+ */
+export const detectFileExtension = (filePath, originalFilename = '') => {
+  // 1. Try extension from originalFilename
+  let ext = path.extname(originalFilename || '').toLowerCase();
+  if (ext && ext.length <= 6) {
+    if (ext === '.jfif') return '.jpg';
+    return ext;
+  }
+
+  // 2. Try extension from filePath
+  ext = path.extname(filePath || '').toLowerCase();
+  if (ext && ext.length <= 6) {
+    if (ext === '.jfif') return '.jpg';
+    return ext;
+  }
+
+  // 3. Inspect magic bytes from the physical file on disk
+  try {
+    if (filePath && fs.existsSync(filePath)) {
+      const fd = fs.openSync(filePath, 'r');
+      const buffer = Buffer.alloc(16);
+      fs.readSync(fd, buffer, 0, 16, 0);
+      fs.closeSync(fd);
+
+      // PDF: %PDF
+      if (buffer.slice(0, 4).toString() === '%PDF') return '.pdf';
+      // PNG: \x89PNG\r\n\x1a\n
+      if (buffer[0] === 0x89 && buffer[1] === 0x50 && buffer[2] === 0x4E && buffer[3] === 0x47) return '.png';
+      // JPEG: \xFF\xD8\xFF
+      if (buffer[0] === 0xFF && buffer[1] === 0xD8 && buffer[2] === 0xFF) return '.jpg';
+      // WebP: RIFF....WEBP
+      if (buffer.slice(0, 4).toString() === 'RIFF' && buffer.slice(8, 12).toString() === 'WEBP') return '.webp';
+      // GIF: GIF8
+      if (buffer.slice(0, 4).toString() === 'GIF8') return '.gif';
+      // BMP: BM
+      if (buffer[0] === 0x42 && buffer[1] === 0x4D) return '.bmp';
+      // ZIP / Office DOCX/XLSX: PK\x03\x04
+      if (buffer[0] === 0x50 && buffer[1] === 0x4B && buffer[2] === 0x03 && buffer[3] === 0x04) return '.docx';
+    }
+  } catch (e) {}
+
+  return '.jpg';
 };
 
 /**
@@ -236,7 +300,11 @@ export const findUploadedFile = (filename) => {
     `${baseName}.pdf`,
     `${baseName}.jpg`,
     `${baseName}.jpeg`,
-    `${baseName}.png`
+    `${baseName}.png`,
+    `${baseName}.docx`,
+    `${baseName}.xlsx`,
+    `${baseName}.doc`,
+    `${baseName}.xls`
   ];
 
   for (const dir of dirs) {

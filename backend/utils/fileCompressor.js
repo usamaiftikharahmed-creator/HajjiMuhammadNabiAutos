@@ -1,112 +1,80 @@
 import sharp from 'sharp';
 import fs from 'fs/promises';
 import path from 'path';
-import { mirrorUploadedFile } from '../services/uploadService.js';
 
 /**
- * Enterprise Image Compression Utility using Sharp
- * - Automatically resizes images to a maximum width/height (default 1600px)
- * - Auto-rotates images based on EXIF metadata (fixes upside-down / rotated mobile photos)
- * - Converts to optimized WebP format with quality 80
- * - Deletes uncompressed raw files to free up disk space immediately
- * - Leaves PDFs and non-image documents untouched
+ * Enterprise Image Optimizer
+ * - Preserves original formats: JPG remains JPG, PNG remains PNG, PDF remains PDF!
+ * - Never converts files to .webp so Windows and mobile devices open them directly in Photo Viewer.
+ * - Auto-rotates mobile photos based on EXIF orientation.
+ * - Downscales ultra-large camera photos (>2200px) cleanly while keeping crisp text readability.
  */
-
 export const compressSingleFile = async (file, options = {}) => {
   if (!file || !file.path) return file;
 
-  const maxWidth = options.maxWidth || 1600;
-  const maxHeight = options.maxHeight || 1600;
-  const quality = options.quality || 80;
+  const maxWidth = options.maxWidth || 2200;
+  const maxHeight = options.maxHeight || 2200;
+  const quality = options.quality || 85;
 
   const originalPath = file.path;
-  const originalSize = file.size || 0;
+  const rawExt = path.extname(file.originalname || file.filename || '').toLowerCase();
+  
+  const isJpg = rawExt === '.jpg' || rawExt === '.jpeg' || rawExt === '.jfif';
+  const isPng = rawExt === '.png';
+  const isWebp = rawExt === '.webp';
 
-  // Check if file is an image by mimetype or extension
-  const isImage = 
-    (file.mimetype && file.mimetype.startsWith('image/')) ||
-    /\.(jpe?g|png|webp|avif|bmp|tiff?|jfif)$/i.test(file.originalname || '');
-
-  // PDFs and non-images pass through unchanged
-  if (!isImage) {
+  // Only optimize JPEG, PNG, and WebP; leave PDFs, Word docs, and other formats completely untouched!
+  if (!isJpg && !isPng && !isWebp) {
     return file;
   }
 
-  const parsed = path.parse(originalPath);
-  const webpFilename = `${parsed.name}.webp`;
-  const webpPath = path.join(parsed.dir, webpFilename);
+  const tempOptimizedPath = `${originalPath}.opt`;
 
   try {
-    // Handle case where original file already ends with .webp to prevent collision
-    const isSamePath = path.resolve(originalPath) === path.resolve(webpPath);
+    const pipeline = sharp(originalPath)
+      .rotate()
+      .resize({
+        width: maxWidth,
+        height: maxHeight,
+        fit: 'inside',
+        withoutEnlargement: true
+      });
 
-    if (isSamePath) {
-      const buffer = await sharp(originalPath)
-        .rotate()
-        .resize({
-          width: maxWidth,
-          height: maxHeight,
-          fit: 'inside',
-          withoutEnlargement: true
-        })
-        .webp({ quality, effort: 4 })
-        .toBuffer();
-
-      await fs.writeFile(webpPath, buffer);
+    if (isPng) {
+      await pipeline.png({ compressionLevel: 8 }).toFile(tempOptimizedPath);
+      file.mimetype = 'image/png';
+    } else if (isWebp) {
+      await pipeline.webp({ quality }).toFile(tempOptimizedPath);
+      file.mimetype = 'image/webp';
     } else {
-      await sharp(originalPath)
-        .rotate()
-        .resize({
-          width: maxWidth,
-          height: maxHeight,
-          fit: 'inside',
-          withoutEnlargement: true
-        })
-        .webp({ quality, effort: 4 })
-        .toFile(webpPath);
-
-      // Delete raw uncompressed file
-      try {
-        await fs.unlink(originalPath);
-      } catch (unlinkErr) {
-        // Ignore if original already removed
-      }
+      await pipeline.jpeg({ quality, mozjpeg: true }).toFile(tempOptimizedPath);
+      file.mimetype = 'image/jpeg';
     }
 
-    // Get compressed stats
-    const stats = await fs.stat(webpPath);
-    const compressedSize = stats.size;
+    // Replace original file with optimized version preserving same path & extension
+    await fs.unlink(originalPath);
+    await fs.rename(tempOptimizedPath, originalPath);
 
-    // Update multer file object metadata
-    file.filename = webpFilename;
-    file.path = webpPath;
-    file.size = compressedSize;
-    file.mimetype = 'image/webp';
-
-    const savedPercent = originalSize > 0 
-      ? Math.round(((originalSize - compressedSize) / originalSize) * 100) 
-      : 0;
-
-    console.log(
-      `⚡ [Image Compressed]: "${file.originalname || file.filename}" -> ${webpFilename} ` +
-      `[${Math.round(originalSize / 1024)} KB -> ${Math.round(compressedSize / 1024)} KB (-${savedPercent}% saved)]`
-    );
+    const stats = await fs.stat(originalPath);
+    file.size = stats.size;
 
     return file;
   } catch (error) {
-    console.warn(`⚠️ Compression skipped for "${file.originalname || file.filename}":`, error.message);
+    console.warn(`Optimization notice for "${file.originalname || file.filename}":`, error.message);
+    try {
+      await fs.unlink(tempOptimizedPath).catch(() => {});
+    } catch (e) {}
     return file;
   }
 };
 
 /**
- * Express Middleware to automatically compress all incoming multer uploads
+ * Express Middleware to automatically optimize incoming uploads
  */
 export const compressUploads = async (req, res, next) => {
   try {
     const promises = [];
 
-    // 1. If multer populated req.files as an array (upload.any() or upload.array())
     if (req.files && Array.isArray(req.files)) {
       for (let i = 0; i < req.files.length; i++) {
         promises.push(
@@ -115,9 +83,7 @@ export const compressUploads = async (req, res, next) => {
           })
         );
       }
-    } 
-    // 2. If multer populated req.files as an object keyed by fieldname (upload.fields())
-    else if (req.files && typeof req.files === 'object') {
+    } else if (req.files && typeof req.files === 'object') {
       Object.keys(req.files).forEach(field => {
         const fieldFiles = req.files[field];
         if (Array.isArray(fieldFiles)) {
@@ -132,7 +98,6 @@ export const compressUploads = async (req, res, next) => {
       });
     }
 
-    // 3. If multer populated req.file (upload.single())
     if (req.file) {
       promises.push(
         compressSingleFile(req.file).then(updated => {
@@ -148,7 +113,6 @@ export const compressUploads = async (req, res, next) => {
     next();
   } catch (err) {
     console.error('Error in compressUploads middleware:', err);
-    // Proceed to controller even if compression middleware encounters an unexpected error
     next();
   }
 };

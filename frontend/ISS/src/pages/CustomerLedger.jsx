@@ -549,7 +549,96 @@ export default function CustomerLedger() {
     }
   };
 
+  // Helper to ensure all downloads maintain their exact original format (.pdf, .png, .jpg, .webp, .docx, etc.)
+  const getDocDownloadInfo = (doc) => {
+    if (!doc) return { rawUrl: '', downloadUrl: '', cleanFilename: 'document' };
+    const rawUrl = getFileUrl(doc.fileUrl);
+    let ext = '';
+    if (doc.fileUrl) {
+      const cleanUrl = doc.fileUrl.split('?')[0].split('#')[0];
+      const dotIdx = cleanUrl.lastIndexOf('.');
+      if (dotIdx !== -1) {
+        ext = cleanUrl.substring(dotIdx + 1).toLowerCase();
+      }
+    }
+    // If extension wasn't found in fileUrl, check if doc.title has an extension
+    if (!ext && doc.title) {
+      const dotIdx = doc.title.lastIndexOf('.');
+      if (dotIdx !== -1) {
+        ext = doc.title.substring(dotIdx + 1).toLowerCase();
+      }
+    }
+    if (ext === 'jfif') ext = 'jpg';
+    const rawTitle = (doc.title || 'Document').trim();
+    const titleWithoutExt = rawTitle.replace(/\.[^/.]+$/, "");
+    const cleanFilename = ext ? `${titleWithoutExt}.${ext}` : titleWithoutExt;
+    const downloadUrl = `${rawUrl}${rawUrl.includes('?') ? '&' : '?'}download=1&title=${encodeURIComponent(cleanFilename)}`;
+    return { rawUrl, downloadUrl, cleanFilename };
+  };
 
+  // 100% Guaranteed Native Client-Side Download Trigger with correct format & extension
+  const [downloadingDocId, setDownloadingDocId] = useState(null);
+
+  const handleDownloadDoc = async (e, doc) => {
+    if (e) {
+      if (e.preventDefault) e.preventDefault();
+      if (e.stopPropagation) e.stopPropagation();
+    }
+    if (!doc || !doc.fileUrl) return;
+
+    const docKey = doc._id || doc.id || doc.fileUrl;
+    const { rawUrl, cleanFilename } = getDocDownloadInfo(doc);
+    setDownloadingDocId(docKey);
+
+    try {
+      const targetUrl = `${rawUrl}${rawUrl.includes('?') ? '&' : '?'}download=1&title=${encodeURIComponent(cleanFilename)}`;
+      const res = await fetch(targetUrl);
+      if (!res.ok) throw new Error(`Server returned HTTP ${res.status}`);
+
+      const blob = await res.blob();
+      
+      // Determine authentic format extension:
+      let detectedExt = '';
+      if (blob.type === 'application/pdf') detectedExt = '.pdf';
+      else if (blob.type === 'image/png') detectedExt = '.png';
+      else if (blob.type === 'image/webp') detectedExt = '.webp';
+      else if (blob.type === 'image/jpeg') detectedExt = '.jpg';
+      else if (blob.type.includes('word') || blob.type.includes('document')) detectedExt = '.docx';
+      else if (blob.type.includes('sheet') || blob.type.includes('excel')) detectedExt = '.xlsx';
+
+      let finalFilename = cleanFilename;
+      if (detectedExt) {
+        const base = cleanFilename.replace(/\.[^/.]+$/, '').trim() || 'Document';
+        finalFilename = `${base}${detectedExt}`;
+      } else if (!cleanFilename.includes('.')) {
+        finalFilename = `${cleanFilename}.jpg`;
+      }
+
+      // Trigger true browser file download via Blob URL
+      const blobUrl = window.URL.createObjectURL(blob);
+      const tempLink = document.createElement('a');
+      tempLink.href = blobUrl;
+      tempLink.download = finalFilename;
+      document.body.appendChild(tempLink);
+      tempLink.click();
+      document.body.removeChild(tempLink);
+      setTimeout(() => window.URL.revokeObjectURL(blobUrl), 2000);
+
+      toast.success(`"${finalFilename}" download ho gaya!`);
+    } catch (err) {
+      console.warn('Direct blob download notice, using fallback:', err.message);
+      const fallbackUrl = `${rawUrl}${rawUrl.includes('?') ? '&' : '?'}download=1&title=${encodeURIComponent(cleanFilename)}`;
+      const tempLink = document.createElement('a');
+      tempLink.href = fallbackUrl;
+      tempLink.target = '_blank';
+      tempLink.download = cleanFilename;
+      document.body.appendChild(tempLink);
+      tempLink.click();
+      document.body.removeChild(tempLink);
+    } finally {
+      setDownloadingDocId(null);
+    }
+  };
 
   const currentDocSale = ledgerData?.installmentSales?.find(s => s._id === docSaleId) || ledgerData?.installmentSales?.[0] || null;
 
@@ -985,8 +1074,7 @@ export default function CustomerLedger() {
                           </div>
                           <div className="flex flex-wrap gap-2">
                             {allDocs.map((doc) => {
-                              const rawUrl = getFileUrl(doc.fileUrl);
-                              const downloadUrl = `${rawUrl}${rawUrl.includes('?') ? '&' : '?'}download=1&title=${encodeURIComponent(doc.title || 'document')}`;
+                              const { rawUrl, downloadUrl, cleanFilename } = getDocDownloadInfo(doc);
                               return (
                                 <div
                                   key={doc._id || doc.fileUrl}
@@ -1011,18 +1099,23 @@ export default function CustomerLedger() {
                                     <span className="font-medium max-w-[150px] sm:max-w-[220px] truncate">{doc.title || 'Document'}</span>
                                     <ExternalLink className="w-2.5 h-2.5 opacity-70" />
                                   </a>
-                                  <a
-                                    href={downloadUrl}
-                                    download={doc.title || 'document'}
-                                    className={`px-2 py-1 border-l transition flex items-center justify-center ${
+                                  <button
+                                    type="button"
+                                    onClick={(e) => handleDownloadDoc(e, doc)}
+                                    disabled={downloadingDocId === (doc._id || doc.fileUrl)}
+                                    className={`px-2 py-1 border-l transition flex items-center justify-center cursor-pointer ${
                                       doc.isCnic 
                                         ? 'bg-amber-900/60 hover:bg-emerald-600 text-amber-300 hover:text-white border-amber-700/50' 
                                         : 'bg-indigo-900/60 hover:bg-emerald-600 text-indigo-300 hover:text-white border-indigo-700/50'
                                     }`}
-                                    title="Download to PC"
+                                    title="Download document in original format"
                                   >
-                                    <Download className="w-3 h-3" />
-                                  </a>
+                                    {downloadingDocId === (doc._id || doc.fileUrl) ? (
+                                      <RefreshCw className="w-3 h-3 animate-spin text-white" />
+                                    ) : (
+                                      <Download className="w-3 h-3" />
+                                    )}
+                                  </button>
                                 </div>
                               );
                             })}
@@ -1802,7 +1895,9 @@ export default function CustomerLedger() {
                   </p>
                 ) : (
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                    {currentDocSale.documents.map((doc) => (
+                    {currentDocSale.documents.map((doc) => {
+                      const { rawUrl, downloadUrl, cleanFilename } = getDocDownloadInfo(doc);
+                      return (
                       <div 
                         key={doc._id} 
                         className="flex items-center justify-between p-3 bg-slate-900 border border-slate-800 rounded-xl hover:border-slate-700 transition"
@@ -1821,7 +1916,7 @@ export default function CustomerLedger() {
 
                         <div className="flex items-center gap-1.5 shrink-0">
                           <a
-                            href={getFileUrl(doc.fileUrl)}
+                            href={rawUrl}
                             target="_blank"
                             rel="noreferrer"
                             className="p-1.5 bg-slate-800 hover:bg-slate-700 text-blue-400 hover:text-blue-300 rounded-lg transition"
@@ -1830,14 +1925,19 @@ export default function CustomerLedger() {
                             <ExternalLink className="w-4 h-4" />
                           </a>
 
-                          <a
-                            href={`${getFileUrl(doc.fileUrl)}?download=1&title=${encodeURIComponent(doc.title || 'document')}`}
-                            download={doc.title || 'document'}
-                            className="p-1.5 bg-slate-800 hover:bg-emerald-950/60 text-slate-400 hover:text-emerald-400 rounded-lg transition"
-                            title="Download Document"
+                          <button
+                            type="button"
+                            onClick={(e) => handleDownloadDoc(e, doc)}
+                            disabled={downloadingDocId === (doc._id || doc.fileUrl)}
+                            className="p-1.5 bg-slate-800 hover:bg-emerald-950/60 text-slate-400 hover:text-emerald-400 rounded-lg transition cursor-pointer"
+                            title="Download Document in original format"
                           >
-                            <Download className="w-4 h-4" />
-                          </a>
+                            {downloadingDocId === (doc._id || doc.fileUrl) ? (
+                              <RefreshCw className="w-4 h-4 animate-spin text-emerald-400" />
+                            ) : (
+                              <Download className="w-4 h-4" />
+                            )}
+                          </button>
 
                           <button
                             type="button"
@@ -1854,7 +1954,8 @@ export default function CustomerLedger() {
                           </button>
                         </div>
                       </div>
-                    ))}
+                    );
+                  })}
 
                     {/* CNIC and Registration documents if present */}
                     {(() => {
@@ -1873,7 +1974,9 @@ export default function CustomerLedger() {
                             Registration & CNIC Copies ({cnicDocs.length}):
                           </span>
                           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                            {cnicDocs.map((cd) => (
+                            {cnicDocs.map((cd) => {
+                              const { rawUrl, downloadUrl, cleanFilename } = getDocDownloadInfo(cd);
+                              return (
                               <div key={cd.id} className="flex items-center justify-between p-2.5 bg-slate-900 border border-amber-800/40 rounded-xl">
                                 <div className="flex items-center gap-2 overflow-hidden">
                                   <Paperclip className="w-4 h-4 text-amber-400 shrink-0" />
@@ -1881,7 +1984,7 @@ export default function CustomerLedger() {
                                 </div>
                                 <div className="flex items-center gap-1.5 shrink-0">
                                   <a
-                                    href={getFileUrl(cd.fileUrl)}
+                                    href={rawUrl}
                                     target="_blank"
                                     rel="noreferrer"
                                     className="p-1.5 bg-slate-800 hover:bg-slate-700 text-blue-400 rounded-lg transition"
@@ -1889,17 +1992,23 @@ export default function CustomerLedger() {
                                   >
                                     <ExternalLink className="w-3.5 h-3.5" />
                                   </a>
-                                  <a
-                                    href={`${getFileUrl(cd.fileUrl)}?download=1&title=${encodeURIComponent(cd.title)}`}
-                                    download={cd.title}
-                                    className="p-1.5 bg-slate-800 hover:bg-emerald-950 text-slate-400 hover:text-emerald-400 rounded-lg transition"
-                                    title="Download"
+                                  <button
+                                    type="button"
+                                    onClick={(e) => handleDownloadDoc(e, cd)}
+                                    disabled={downloadingDocId === (cd.id || cd.fileUrl)}
+                                    className="p-1.5 bg-slate-800 hover:bg-emerald-950 text-slate-400 hover:text-emerald-400 rounded-lg transition cursor-pointer"
+                                    title="Download in original format"
                                   >
-                                    <Download className="w-3.5 h-3.5" />
-                                  </a>
+                                    {downloadingDocId === (cd.id || cd.fileUrl) ? (
+                                      <RefreshCw className="w-3.5 h-3.5 animate-spin text-emerald-400" />
+                                    ) : (
+                                      <Download className="w-3.5 h-3.5" />
+                                    )}
+                                  </button>
                                 </div>
                               </div>
-                            ))}
+                            );
+                          })}
                           </div>
                         </div>
                       );
@@ -2079,14 +2188,30 @@ export default function CustomerLedger() {
               <span className="text-xs text-slate-300 font-semibold flex items-center gap-1.5">
                 <Camera className="w-4 h-4 text-blue-400" /> Customer Profile Picture
               </span>
-              <a 
-                href={selectedImageForZoom} 
-                target="_blank" 
-                rel="noreferrer" 
-                className="text-xs text-blue-400 hover:text-blue-300 flex items-center gap-1 font-semibold"
-              >
-                <ExternalLink className="w-3.5 h-3.5" /> Full Size Link
-              </a>
+              <div className="flex items-center gap-2.5">
+                <button 
+                  type="button"
+                  onClick={(e) => handleDownloadDoc(e, { fileUrl: selectedImageForZoom, title: `${ledgerData?.customer?.name || 'Customer'}_Photo` })}
+                  disabled={downloadingDocId === selectedImageForZoom}
+                  className="text-xs bg-emerald-600 hover:bg-emerald-500 text-white px-2.5 py-1 rounded-lg flex items-center gap-1 font-semibold transition cursor-pointer shadow-sm"
+                  title="Download Photo in Original Format"
+                >
+                  {downloadingDocId === selectedImageForZoom ? (
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                  ) : (
+                    <Download className="w-3.5 h-3.5" />
+                  )}
+                  Download
+                </button>
+                <a 
+                  href={selectedImageForZoom} 
+                  target="_blank" 
+                  rel="noreferrer" 
+                  className="text-xs text-blue-400 hover:text-blue-300 flex items-center gap-1 font-semibold"
+                >
+                  <ExternalLink className="w-3.5 h-3.5" /> Full Size Link
+                </a>
+              </div>
             </div>
           </div>
         </div>

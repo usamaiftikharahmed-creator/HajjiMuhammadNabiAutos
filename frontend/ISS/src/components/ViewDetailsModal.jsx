@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { X, User, Package, History, DollarSign, Printer, Send, ExternalLink, Camera } from 'lucide-react';
+import { X, User, Package, History, DollarSign, Printer, Send, ExternalLink, Camera, Download, RefreshCw } from 'lucide-react';
 import toast from 'react-hot-toast';
 import PaymentReceiptModal from './PaymentReceiptModal';
 import A4ReceiptModal from './A4ReceiptModal';
@@ -13,6 +13,42 @@ export default function ViewDetailsModal({ selectedSale, onClose, onRefresh, onO
   const [showPayModal, setShowPayModal] = useState(false);
   const [showA4Modal, setShowA4Modal] = useState(false);
   const [zoomImg, setZoomImg] = useState(null);
+  const [downloadingPhoto, setDownloadingPhoto] = useState(false);
+
+  const handleDownloadPhoto = async (e) => {
+    if (e) {
+      if (e.preventDefault) e.preventDefault();
+      if (e.stopPropagation) e.stopPropagation();
+    }
+    if (!zoomImg) return;
+    setDownloadingPhoto(true);
+    const photoName = `${getCustomerField(selectedSale?.customer, 'name') || 'Customer'}_Photo`;
+    try {
+      const targetUrl = `${zoomImg}${zoomImg.includes('?') ? '&' : '?'}download=1&title=${encodeURIComponent(photoName)}`;
+      const res = await fetch(targetUrl);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const blob = await res.blob();
+      let ext = '.jpg';
+      if (blob.type === 'image/png') ext = '.png';
+      else if (blob.type === 'image/webp') ext = '.webp';
+      else if (blob.type === 'application/pdf') ext = '.pdf';
+      const finalName = `${photoName}${ext}`;
+
+      const blobUrl = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = blobUrl;
+      link.download = finalName;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      setTimeout(() => window.URL.revokeObjectURL(blobUrl), 2000);
+      toast.success(`"${finalName}" download ho gaya!`);
+    } catch (err) {
+      window.open(`${zoomImg}${zoomImg.includes('?') ? '&' : '?'}download=1&title=${encodeURIComponent(photoName)}`, '_blank');
+    } finally {
+      setDownloadingPhoto(false);
+    }
+  };
 
   const handleOpenPay = () => {
     if (typeof onOpenPayModal === 'function') {
@@ -482,14 +518,30 @@ export default function ViewDetailsModal({ selectedSale, onClose, onRefresh, onO
               <span className="text-xs text-slate-300 font-semibold flex items-center gap-1.5">
                 <Camera className="w-4 h-4 text-blue-400" /> Customer Profile Picture
               </span>
-              <a 
-                href={zoomImg} 
-                target="_blank" 
-                rel="noreferrer" 
-                className="text-xs text-blue-400 hover:text-blue-300 flex items-center gap-1 font-semibold"
-              >
-                <ExternalLink className="w-3.5 h-3.5" /> Full Size Link
-              </a>
+              <div className="flex items-center gap-2.5">
+                <button 
+                  type="button"
+                  onClick={handleDownloadPhoto}
+                  disabled={downloadingPhoto}
+                  className="text-xs bg-emerald-600 hover:bg-emerald-500 text-white px-2.5 py-1 rounded-lg flex items-center gap-1 font-semibold transition cursor-pointer shadow-sm"
+                  title="Download Photo in Original Format"
+                >
+                  {downloadingPhoto ? (
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                  ) : (
+                    <Download className="w-3.5 h-3.5" />
+                  )}
+                  Download
+                </button>
+                <a 
+                  href={zoomImg} 
+                  target="_blank" 
+                  rel="noreferrer" 
+                  className="text-xs text-blue-400 hover:text-blue-300 flex items-center gap-1 font-semibold"
+                >
+                  <ExternalLink className="w-3.5 h-3.5" /> Full Size Link
+                </a>
+              </div>
             </div>
           </div>
         </div>
