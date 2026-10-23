@@ -27,9 +27,8 @@ export const compressSingleFile = async (file, options = {}) => {
     (file.mimetype && file.mimetype.startsWith('image/')) ||
     /\.(jpe?g|png|webp|avif|bmp|tiff?|jfif)$/i.test(file.originalname || '');
 
-  // PDFs and non-images pass through unchanged, but MUST be mirrored to all uploads folders!
+  // PDFs and non-images pass through unchanged
   if (!isImage) {
-    mirrorUploadedFile(originalPath, path.basename(originalPath)).catch(() => {});
     return file;
   }
 
@@ -93,14 +92,9 @@ export const compressSingleFile = async (file, options = {}) => {
       `[${Math.round(originalSize / 1024)} KB -> ${Math.round(compressedSize / 1024)} KB (-${savedPercent}% saved)]`
     );
 
-    // Mirror to backup locations asynchronously
-    mirrorUploadedFile(webpPath, webpFilename).catch(() => {});
-
     return file;
   } catch (error) {
     console.warn(`⚠️ Compression skipped for "${file.originalname || file.filename}":`, error.message);
-    // Mirror original file even if compression fails so it is never lost
-    mirrorUploadedFile(originalPath, path.basename(originalPath)).catch(() => {});
     return file;
   }
 };

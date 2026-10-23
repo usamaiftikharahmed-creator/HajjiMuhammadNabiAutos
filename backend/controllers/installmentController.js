@@ -810,13 +810,28 @@ export const updateSaleDetails = async (req, res) => {
 export const uploadSaleDocuments = async (req, res) => {
   try {
     const { id } = req.params;
-    const sale = await InstallmentSale.findById(id);
-    if (!sale) {
-      return res.status(404).json({ success: false, message: 'Installment account not found' });
-    }
 
     if (!req.files || req.files.length === 0) {
       return res.status(400).json({ success: false, message: 'No file uploaded' });
+    }
+
+    // 1. Flexible lookup: match by sale ID, or if customer ID passed, find their sale
+    let sale = null;
+    if (id && mongoose.Types.ObjectId.isValid(id)) {
+      sale = await InstallmentSale.findById(id);
+      if (!sale) {
+        sale = await InstallmentSale.findOne({ customer: id }).sort({ createdAt: -1 });
+      }
+    }
+    if (!sale && id) {
+      const cust = await Customer.findOne({ customerId: String(id).toUpperCase() });
+      if (cust) {
+        sale = await InstallmentSale.findOne({ customer: cust._id }).sort({ createdAt: -1 });
+      }
+    }
+
+    if (!sale) {
+      return res.status(404).json({ success: false, message: 'Installment account not found' });
     }
 
     const newDocuments = [];
@@ -824,27 +839,29 @@ export const uploadSaleDocuments = async (req, res) => {
       const file = req.files[idx];
       const fileUrl = `/uploads/${file.filename}`;
       const title = req.body[`docTitle_${idx}`] || req.body[`docTitle[${idx}]`] || req.body.title || file.originalname || `Document ${idx + 1}`;
-      
+      newDocuments.push({ title, fileUrl });
+    }
+
+    // 2. CRITICAL: Save to MongoDB Atlas FIRST so document is immediately registered!
+    const updatedSale = await InstallmentSale.findByIdAndUpdate(
+      sale._id,
+      { $push: { documents: { $each: newDocuments } } },
+      { new: true }
+    );
+
+    // 3. Mirror/upload to Google Drive Cloud folder
+    for (const file of req.files) {
       try {
         await mirrorUploadedFile(file.path, file.filename);
       } catch (mirrorErr) {
         console.warn('mirrorUploadedFile warning:', mirrorErr.message);
       }
-
-      newDocuments.push({ title, fileUrl });
     }
-
-    // Atomic $push directly into MongoDB Atlas
-    const updatedSale = await InstallmentSale.findByIdAndUpdate(
-      id,
-      { $push: { documents: { $each: newDocuments } } },
-      { new: true }
-    );
 
     // Mirror to offlineDb JSON
     try {
-      if (offlineDb?.installmentSales?.findByIdAndUpdate) {
-        offlineDb.installmentSales.findByIdAndUpdate(id, { $set: { documents: updatedSale.documents } }).catch(() => {});
+      if (offlineDb?.installmentSales?.findByIdAndUpdate && updatedSale) {
+        offlineDb.installmentSales.findByIdAndUpdate(sale._id, { $set: { documents: updatedSale.documents } }).catch(() => {});
       }
     } catch (e) {}
 
@@ -853,7 +870,8 @@ export const uploadSaleDocuments = async (req, res) => {
     res.json({
       success: true,
       message: 'Document(s) uploaded successfully',
-      documents: updatedSale.documents
+      documents: updatedSale ? updatedSale.documents : sale.documents,
+      saleId: sale._id
     });
   } catch (error) {
     console.error('Upload Documents Error:', error.message);

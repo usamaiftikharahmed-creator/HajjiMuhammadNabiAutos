@@ -930,44 +930,92 @@ export default function CustomerLedger() {
                       </div>
                     )}
 
-                    {/* ATTACHED DOCUMENTS WITH CLICKABLE VIEW & DOWNLOAD LINKS */}
-                    {sale.documents && sale.documents.length > 0 && (
-                      <div className="space-y-1.5 pt-1">
-                        <span className="text-[10px] text-slate-400 font-semibold uppercase tracking-wider block">Attached Documents:</span>
-                        <div className="flex flex-wrap gap-2">
-                          {sale.documents.map((doc) => {
-                            const rawUrl = getFileUrl(doc.fileUrl);
-                            const downloadUrl = `${rawUrl}${rawUrl.includes('?') ? '&' : '?'}download=1&title=${encodeURIComponent(doc.title || 'document')}`;
-                            return (
-                              <div
-                                key={doc._id || doc.fileUrl}
-                                className="inline-flex items-center bg-indigo-950/70 border border-indigo-700/60 rounded-lg overflow-hidden shadow-sm hover:border-indigo-500 transition"
-                              >
-                                <a
-                                  href={rawUrl}
-                                  target="_blank"
-                                  rel="noreferrer"
-                                  className="inline-flex items-center gap-1.5 px-2.5 py-1 text-[11px] text-indigo-200 hover:text-white hover:bg-indigo-800/50 transition"
-                                  title="Click to open/view document"
+                    {/* ATTACHED DOCUMENTS & CNIC COPIES WITH CLICKABLE VIEW & DOWNLOAD LINKS */}
+                    {(() => {
+                      const allDocs = [
+                        ...(Array.isArray(sale.documents) ? sale.documents : []),
+                        ...(sale.cnicFront ? [{ _id: 'cnicFront', title: 'Customer CNIC (Front)', fileUrl: sale.cnicFront, isCnic: true }] : []),
+                        ...(sale.cnicBack ? [{ _id: 'cnicBack', title: 'Customer CNIC (Back)', fileUrl: sale.cnicBack, isCnic: true }] : []),
+                        ...(sale.guarantor1CnicFront ? [{ _id: 'g1Front', title: 'Guarantor 1 CNIC (Front)', fileUrl: sale.guarantor1CnicFront, isCnic: true }] : []),
+                        ...(sale.guarantor1CnicBack ? [{ _id: 'g1Back', title: 'Guarantor 1 CNIC (Back)', fileUrl: sale.guarantor1CnicBack, isCnic: true }] : []),
+                        ...(sale.guarantor2CnicFront ? [{ _id: 'g2Front', title: 'Guarantor 2 CNIC (Front)', fileUrl: sale.guarantor2CnicFront, isCnic: true }] : []),
+                        ...(sale.guarantor2CnicBack ? [{ _id: 'g2Back', title: 'Guarantor 2 CNIC (Back)', fileUrl: sale.guarantor2CnicBack, isCnic: true }] : [])
+                      ];
+
+                      if (allDocs.length === 0) {
+                        return (
+                          <div className="flex items-center justify-between pt-1 text-[11px] text-slate-500 italic print:hidden">
+                            <span>Koi document attach nahi hai</span>
+                            <button
+                              onClick={() => handleOpenDocModal(sale._id)}
+                              className="text-indigo-400 hover:text-indigo-300 hover:underline text-[10px] font-semibold flex items-center gap-1 cursor-pointer"
+                            >
+                              <FolderPlus className="w-3 h-3" /> + Attach Document
+                            </button>
+                          </div>
+                        );
+                      }
+
+                      return (
+                        <div className="space-y-1.5 pt-1">
+                          <div className="flex items-center justify-between">
+                            <span className="text-[10px] text-indigo-300 font-bold uppercase tracking-wider flex items-center gap-1">
+                              <FileText className="w-3 h-3 text-indigo-400" /> Attached Documents & CNIC ({allDocs.length}):
+                            </span>
+                            <button
+                              onClick={() => handleOpenDocModal(sale._id)}
+                              className="text-[10px] text-indigo-400 hover:text-indigo-200 underline font-medium cursor-pointer print:hidden"
+                            >
+                              + Manage / Add More
+                            </button>
+                          </div>
+                          <div className="flex flex-wrap gap-2">
+                            {allDocs.map((doc) => {
+                              const rawUrl = getFileUrl(doc.fileUrl);
+                              const downloadUrl = `${rawUrl}${rawUrl.includes('?') ? '&' : '?'}download=1&title=${encodeURIComponent(doc.title || 'document')}`;
+                              return (
+                                <div
+                                  key={doc._id || doc.fileUrl}
+                                  className={`inline-flex items-center rounded-lg overflow-hidden shadow-sm transition border ${
+                                    doc.isCnic 
+                                      ? 'bg-amber-950/50 border-amber-700/60 hover:border-amber-500' 
+                                      : 'bg-indigo-950/70 border-indigo-700/60 hover:border-indigo-500'
+                                  }`}
                                 >
-                                  <Paperclip className="w-3 h-3 text-indigo-400 shrink-0" />
-                                  <span className="font-medium max-w-[140px] sm:max-w-[200px] truncate">{doc.title || 'Document'}</span>
-                                  <ExternalLink className="w-2.5 h-2.5 opacity-70" />
-                                </a>
-                                <a
-                                  href={downloadUrl}
-                                  download={doc.title || 'document'}
-                                  className="px-2 py-1 bg-indigo-900/60 hover:bg-emerald-600 text-indigo-300 hover:text-white border-l border-indigo-700/50 transition flex items-center justify-center"
-                                  title="Download to PC"
-                                >
-                                  <Download className="w-3 h-3" />
-                                </a>
-                              </div>
-                            );
-                          })}
+                                  <a
+                                    href={rawUrl}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className={`inline-flex items-center gap-1.5 px-2.5 py-1 text-[11px] transition ${
+                                      doc.isCnic 
+                                        ? 'text-amber-200 hover:text-white hover:bg-amber-800/50' 
+                                        : 'text-indigo-200 hover:text-white hover:bg-indigo-800/50'
+                                    }`}
+                                    title="Click to open/view document"
+                                  >
+                                    <Paperclip className={`w-3 h-3 shrink-0 ${doc.isCnic ? 'text-amber-400' : 'text-indigo-400'}`} />
+                                    <span className="font-medium max-w-[150px] sm:max-w-[220px] truncate">{doc.title || 'Document'}</span>
+                                    <ExternalLink className="w-2.5 h-2.5 opacity-70" />
+                                  </a>
+                                  <a
+                                    href={downloadUrl}
+                                    download={doc.title || 'document'}
+                                    className={`px-2 py-1 border-l transition flex items-center justify-center ${
+                                      doc.isCnic 
+                                        ? 'bg-amber-900/60 hover:bg-emerald-600 text-amber-300 hover:text-white border-amber-700/50' 
+                                        : 'bg-indigo-900/60 hover:bg-emerald-600 text-indigo-300 hover:text-white border-indigo-700/50'
+                                    }`}
+                                    title="Download to PC"
+                                  >
+                                    <Download className="w-3 h-3" />
+                                  </a>
+                                </div>
+                              );
+                            })}
+                          </div>
                         </div>
-                      </div>
-                    )}
+                      );
+                    })()}
 
                     <div className="grid grid-cols-2 gap-2 text-xs pt-2 border-t border-slate-900 print:border-gray-300">
                       <div><span className="text-slate-500">Total Price:</span> <span className="font-semibold text-slate-200 print:text-black">Rs. {sale.totalAmount?.toLocaleString()}</span></div>
@@ -1793,6 +1841,55 @@ export default function CustomerLedger() {
                         </div>
                       </div>
                     ))}
+
+                    {/* CNIC and Registration documents if present */}
+                    {(() => {
+                      const cnicDocs = [
+                        ...(currentDocSale?.cnicFront ? [{ id: 'cnicFront', title: 'Customer CNIC (Front)', fileUrl: currentDocSale.cnicFront }] : []),
+                        ...(currentDocSale?.cnicBack ? [{ id: 'cnicBack', title: 'Customer CNIC (Back)', fileUrl: currentDocSale.cnicBack }] : []),
+                        ...(currentDocSale?.guarantor1CnicFront ? [{ id: 'g1Front', title: 'Guarantor 1 CNIC (Front)', fileUrl: currentDocSale.guarantor1CnicFront }] : []),
+                        ...(currentDocSale?.guarantor1CnicBack ? [{ id: 'g1Back', title: 'Guarantor 1 CNIC (Back)', fileUrl: currentDocSale.guarantor1CnicBack }] : []),
+                        ...(currentDocSale?.guarantor2CnicFront ? [{ id: 'g2Front', title: 'Guarantor 2 CNIC (Front)', fileUrl: currentDocSale.guarantor2CnicFront }] : []),
+                        ...(currentDocSale?.guarantor2CnicBack ? [{ id: 'g2Back', title: 'Guarantor 2 CNIC (Back)', fileUrl: currentDocSale.guarantor2CnicBack }] : [])
+                      ];
+                      if (cnicDocs.length === 0) return null;
+                      return (
+                        <div className="col-span-full pt-2 border-t border-slate-800 space-y-2">
+                          <span className="text-[10px] text-amber-400 font-bold uppercase tracking-wider block">
+                            Registration & CNIC Copies ({cnicDocs.length}):
+                          </span>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                            {cnicDocs.map((cd) => (
+                              <div key={cd.id} className="flex items-center justify-between p-2.5 bg-slate-900 border border-amber-800/40 rounded-xl">
+                                <div className="flex items-center gap-2 overflow-hidden">
+                                  <Paperclip className="w-4 h-4 text-amber-400 shrink-0" />
+                                  <span className="text-xs font-semibold text-slate-200 truncate">{cd.title}</span>
+                                </div>
+                                <div className="flex items-center gap-1.5 shrink-0">
+                                  <a
+                                    href={getFileUrl(cd.fileUrl)}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="p-1.5 bg-slate-800 hover:bg-slate-700 text-blue-400 rounded-lg transition"
+                                    title="View"
+                                  >
+                                    <ExternalLink className="w-3.5 h-3.5" />
+                                  </a>
+                                  <a
+                                    href={`${getFileUrl(cd.fileUrl)}?download=1&title=${encodeURIComponent(cd.title)}`}
+                                    download={cd.title}
+                                    className="p-1.5 bg-slate-800 hover:bg-emerald-950 text-slate-400 hover:text-emerald-400 rounded-lg transition"
+                                    title="Download"
+                                  >
+                                    <Download className="w-3.5 h-3.5" />
+                                  </a>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    })()}
                   </div>
                 )}
               </div>
