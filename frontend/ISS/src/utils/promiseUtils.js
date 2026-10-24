@@ -116,6 +116,23 @@ export const parsePromiseDetails = (sale) => {
     }
   }
 
+  // 3c. Check if "Month YYYY DD", e.g. "June 2027 10" or "Jun 2027, 10"
+  if (targetYear === null) {
+    const monthYearDayMatch = pStr.match(/^([a-zA-Z]+)\s+(\d{2,4}),?\s+(\d{1,2})$/);
+    if (monthYearDayMatch) {
+      targetDay = parseInt(monthYearDayMatch[3], 10);
+      const mStr = monthYearDayMatch[1].toLowerCase();
+      for (let i = 0; i < 12; i++) {
+        if (mStr.includes(SHORT_MONTHS[i].toLowerCase()) || mStr.includes(MONTH_NAMES[i].toLowerCase())) {
+          targetMonth = i;
+          break;
+        }
+      }
+      const y = parseInt(monthYearDayMatch[2], 10);
+      targetYear = y < 100 ? 2000 + y : y;
+    }
+  }
+
   // 4. Check if digits only / duration, e.g. "24", "24 months", "24 Months Plan"
   if (targetYear === null) {
     const digitsOnlyMatch = pStr.match(/^(\d{1,3})\s*(?:months?|mahiny?|mah)?(?:\s+plan)?$/i);
@@ -306,9 +323,16 @@ export const formatPromiseUrduNote = (sale, asOfDate = new Date()) => {
 
   const finalDate = info.finalDateStr || info.promiseMonthStr;
 
+  // We wrap the date with Unicode Left-to-Right Marks (\u200E) and Left-to-Right Isolate (\u2066...\u2069).
+  // In RTL contexts (Urdu text on screen, print invoices, and WhatsApp messages),
+  // this prevents the bidirectional algorithm from inverting numbers and English month names,
+  // guaranteeing that "10 June 2027" displays strictly in natural "10 June 2027" order
+  // instead of flipping to "June 2027 10".
+  const ltrDate = `\u200E\u2066${finalDate}\u2069\u200E`;
+
   if (info.isExpired) {
-    return `نوٹ: آپ کی آخری قسط کی تاریخ ${finalDate} کو گزر چکی ہے، مہربانی کر کے بقیہ رقم فوری ادا کریں۔`;
+    return `نوٹ: آپ کی آخری قسط کی تاریخ ${ltrDate} کو گزر چکی ہے، مہربانی کر کے بقیہ رقم فوری ادا کریں۔`;
   }
 
-  return `نوٹ: آپ کی آخری قسط کی تاریخ ${finalDate} کو ہے۔`;
+  return `نوٹ: آپ کی آخری قسط کی تاریخ ${ltrDate} کو ہے۔`;
 };

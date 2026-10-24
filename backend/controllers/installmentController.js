@@ -11,7 +11,7 @@ import { invalidateDashboardCache } from '../routes/dashboardRoutes.js';
 import { triggerDebouncedLiveJsonSync } from '../services/backupService.js';
 import { offlineDb } from '../services/offlineDb.js';
 import { mirrorUploadedFile, getUploadDirs } from '../services/uploadService.js';
-import { deleteFromGoogleDrive } from '../services/googleDriveService.js';
+import { deleteFromGoogleDrive, uploadToGoogleDrive } from '../services/googleDriveService.js';
 
 // Process-wide Singleton RAM cache for sub-millisecond page loads (<1ms)
 const SALES_CACHE_TTL_MS = 60000; // 60 seconds TTL
@@ -109,9 +109,22 @@ export const createInstallmentSale = async (req, res) => {
     const documents = [];
 
     if (req.files && Array.isArray(req.files)) {
-      req.files.forEach((file) => {
+      for (const file of req.files) {
+        let driveResult = null;
+        try {
+          driveResult = await uploadToGoogleDrive(file.path, file.filename);
+        } catch (err) {
+          console.warn('Google Drive upload notice:', err.message);
+        }
+
+        // Clean up local file so it is NOT kept on local disk (saved only to Drive)
+        if (driveResult) {
+          try { fs.unlinkSync(file.path); } catch (e) {}
+        }
+
         const fileUrl = `/uploads/${file.filename}`;
-        mirrorUploadedFile(file.path, file.filename).catch(() => {});
+        const driveFileId = driveResult?.fileId || null;
+
         if (file.fieldname === 'profilePic' || file.fieldname === 'customerPhoto' || file.fieldname === 'photo') {
           profilePic = fileUrl;
         }
@@ -133,9 +146,9 @@ export const createInstallmentSale = async (req, res) => {
             const idx = documents.length;
             title = req.body[`docTitle_${idx}`] || req.body[`docTitle[${idx}]`] || req.body.title || file.originalname || `Document ${idx + 1}`;
           }
-          documents.push({ title, fileUrl });
+          documents.push({ title, fileUrl, driveFileId });
         }
-      });
+      }
     }
 
     // Find or create customer
@@ -598,13 +611,18 @@ export const updateCustomer = async (req, res) => {
     } = req.body;
 
     let profilePic = req.body.profilePic;
-    if (req.files && Array.isArray(req.files)) {
-      const picFile = req.files.find(f => f.fieldname === 'profilePic' || f.fieldname === 'photo' || f.fieldname === 'customerPhoto');
-      if (picFile) {
-        profilePic = `/uploads/${picFile.filename}`;
+    const picFile = (req.files && Array.isArray(req.files))
+      ? req.files.find(f => f.fieldname === 'profilePic' || f.fieldname === 'photo' || f.fieldname === 'customerPhoto')
+      : req.file;
+    if (picFile) {
+      let driveResult = null;
+      try {
+        driveResult = await uploadToGoogleDrive(picFile.path, picFile.filename);
+      } catch (err) {}
+      if (driveResult) {
+        try { fs.unlinkSync(picFile.path); } catch (e) {}
       }
-    } else if (req.file) {
-      profilePic = `/uploads/${req.file.filename}`;
+      profilePic = `/uploads/${picFile.filename}`;
     }
 
     const updatedCustomer = await Customer.findByIdAndUpdate(
@@ -652,10 +670,16 @@ export const uploadCustomerPhoto = async (req, res) => {
   try {
     const { id } = req.params;
     let profilePic = '';
-    if (req.files && Array.isArray(req.files) && req.files.length > 0) {
-      profilePic = `/uploads/${req.files[0].filename}`;
-    } else if (req.file) {
-      profilePic = `/uploads/${req.file.filename}`;
+    const file = (req.files && Array.isArray(req.files) && req.files.length > 0) ? req.files[0] : req.file;
+    if (file) {
+      let driveResult = null;
+      try {
+        driveResult = await uploadToGoogleDrive(file.path, file.filename);
+      } catch (err) {}
+      if (driveResult) {
+        try { fs.unlinkSync(file.path); } catch (e) {}
+      }
+      profilePic = `/uploads/${file.filename}`;
     }
 
     if (!profilePic) {
@@ -837,26 +861,31 @@ export const uploadSaleDocuments = async (req, res) => {
     const newDocuments = [];
     for (let idx = 0; idx < req.files.length; idx++) {
       const file = req.files[idx];
+      let driveResult = null;
+      try {
+        driveResult = await uploadToGoogleDrive(file.path, file.filename);
+      } catch (mirrorErr) {
+        console.warn('uploadToGoogleDrive notice:', mirrorErr.message);
+      }
+
+      // User requested: "meri local disk pr kuch bhi save nh krna sb kuch drive pr chaea mujhaa"
+      // Clean up temporary local file once safely stored in Google Drive
+      if (driveResult) {
+        try { fs.unlinkSync(file.path); } catch (e) {}
+      }
+
       const fileUrl = `/uploads/${file.filename}`;
+      const driveFileId = driveResult?.fileId || null;
       const title = req.body[`docTitle_${idx}`] || req.body[`docTitle[${idx}]`] || req.body.title || file.originalname || `Document ${idx + 1}`;
-      newDocuments.push({ title, fileUrl });
+      newDocuments.push({ title, fileUrl, driveFileId });
     }
 
-    // 2. CRITICAL: Save to MongoDB Atlas FIRST so document is immediately registered!
+    // Save to MongoDB Atlas with Google Drive fileUrl & driveFileId
     const updatedSale = await InstallmentSale.findByIdAndUpdate(
       sale._id,
       { $push: { documents: { $each: newDocuments } } },
       { new: true }
     );
-
-    // 3. Mirror/upload to Google Drive Cloud folder
-    for (const file of req.files) {
-      try {
-        await mirrorUploadedFile(file.path, file.filename);
-      } catch (mirrorErr) {
-        console.warn('mirrorUploadedFile warning:', mirrorErr.message);
-      }
-    }
 
     // Mirror to offlineDb JSON
     try {
@@ -896,21 +925,28 @@ export const deleteSaleDocument = async (req, res) => {
       d.fileUrl === `/uploads/${docId}`
     );
 
-    if (docToDelete && docToDelete.fileUrl) {
-      const filenameToDelete = path.basename(docToDelete.fileUrl);
-      // Delete directly from 200GB Google Drive uploads folder
-      try {
-        await deleteFromGoogleDrive(filenameToDelete);
-      } catch (driveDelErr) {
-        console.warn('Google Drive delete error:', driveDelErr.message);
-      }
-      // Delete from local disks if present
-      getUploadDirs().forEach(dir => {
+    if (docToDelete) {
+      if (docToDelete.driveFileId) {
         try {
-          const p = path.join(dir, filenameToDelete);
-          if (fs.existsSync(p)) fs.unlinkSync(p);
+          await deleteFromGoogleDrive(docToDelete.driveFileId);
         } catch (e) {}
-      });
+      }
+      if (docToDelete.fileUrl) {
+        const filenameToDelete = path.basename(docToDelete.fileUrl);
+        // Delete directly from 200GB Google Drive uploads folder
+        try {
+          await deleteFromGoogleDrive(filenameToDelete);
+        } catch (driveDelErr) {
+          console.warn('Google Drive delete error:', driveDelErr.message);
+        }
+        // Delete from local disks if present
+        getUploadDirs().forEach(dir => {
+          try {
+            const p = path.join(dir, filenameToDelete);
+            if (fs.existsSync(p)) fs.unlinkSync(p);
+          } catch (e) {}
+        });
+      }
     }
 
     // 2. Atomic $pull from MongoDB

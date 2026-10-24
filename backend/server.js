@@ -54,7 +54,7 @@ import { initBackupScheduler } from './services/backupService.js';
 import { prewarmSalesCache } from './controllers/installmentController.js';
 import { loadAllData } from './services/offlineDb.js';
 import { syncOfflineDataToAtlas, startBackgroundSyncMonitor } from './services/syncService.js';
-import { getFileStreamFromGoogleDrive, syncAllLocalUploadsToDrive } from './services/googleDriveService.js';
+import { getFileStreamFromGoogleDrive, getGoogleDriveFileInfo, syncAllLocalUploadsToDrive } from './services/googleDriveService.js';
 import User from './models/User.js';
 
 import compression from 'compression';
@@ -167,7 +167,6 @@ app.get(['/uploads/:filename', '/api/installments/download/:filename'], async (r
     const isDownload = req.query.download === '1' || req.query.download === 'true' || req.path.includes('/download/');
     if (isDownload) {
       let titleBase = req.query.title ? String(req.query.title).trim() : path.basename(localFilePath);
-      // Strip any extension attached to titleBase so we don't end up with duplicate or mismatched extensions
       titleBase = titleBase.replace(/\.[^/.]+$/, '').trim();
       if (!titleBase) titleBase = 'document';
 
@@ -181,60 +180,53 @@ app.get(['/uploads/:filename', '/api/installments/download/:filename'], async (r
     return res.sendFile(localFilePath);
   }
 
-  // 2. Fallback: If not on local disk, try Google Drive with a fast 3.5s timeout
+  // 2. Google Drive Cloud Storage (200GB Permanent Zero Data Loss)
   try {
-    const driveResult = await getFileStreamFromGoogleDrive(filename);
-    if (driveResult) {
-      const driveStream = driveResult.stream || driveResult;
-      const driveMeta = driveResult.fileMeta;
-
-      const driveFileName = driveMeta?.name || filename;
-      const driveMime = driveMeta?.mimeType;
-
-      let realExt = detectFileExtension('', driveFileName);
-      if (!realExt || realExt === '.jpg') {
-        if (driveMime === 'application/pdf') realExt = '.pdf';
-        else if (driveMime === 'image/png') realExt = '.png';
-        else if (driveMime === 'image/webp') realExt = '.webp';
-        else if (driveMime === 'image/jpeg') realExt = '.jpg';
-        else if (driveMime?.includes('word')) realExt = '.docx';
-        else if (driveMime?.includes('sheet')) realExt = '.xlsx';
-      }
-
-      const mimeType = driveMime || detectMimeType('', driveFileName);
-
-      res.setHeader('Content-Type', mimeType);
-      res.setHeader('Cache-Control', 'public, max-age=86400');
-
+    const driveInfo = await getGoogleDriveFileInfo(filename);
+    if (driveInfo) {
       const isDownload = req.query.download === '1' || req.query.download === 'true' || req.path.includes('/download/');
-      if (isDownload) {
-        let titleBase = req.query.title ? String(req.query.title).trim() : path.basename(driveFileName);
-        titleBase = titleBase.replace(/\.[^/.]+$/, '').trim();
-        if (!titleBase) titleBase = 'document';
+      const isImage = driveInfo.mimeType?.startsWith('image/') || /\.(png|jpe?g|webp|gif|svg)$/i.test(driveInfo.name || filename);
 
-        const downloadFilename = `${titleBase}${realExt}`;
-        const safeAscii = downloadFilename.replace(/[^\x20-\x7E]/g, '_').replace(/["\\]/g, '_');
+      // Stream directly if downloading OR if it is a non-image file (PDF, Doc, etc.) to ensure complete document viewing
+      if (isDownload || !isImage) {
+        const driveResult = await getFileStreamFromGoogleDrive(driveInfo.id);
+        if (driveResult && driveResult.stream) {
+          let titleBase = req.query.title ? String(req.query.title).trim() : path.basename(driveInfo.name || filename);
+          titleBase = titleBase.replace(/\.[^/.]+$/, '').trim();
+          if (!titleBase) titleBase = 'document';
 
-        res.setHeader(
-          'Content-Disposition',
-          `attachment; filename="${safeAscii}"; filename*=UTF-8''${encodeURIComponent(downloadFilename)}`
-        );
-      } else {
-        res.setHeader('Content-Disposition', `inline; filename="${encodeURIComponent(filename)}"`);
+          const realExt = detectFileExtension('', driveInfo.name || filename);
+          const downloadFilename = `${titleBase}${realExt}`;
+          const safeAscii = downloadFilename.replace(/[^\x20-\x7E]/g, '_').replace(/["\\]/g, '_');
+
+          res.setHeader('Content-Type', driveInfo.mimeType || 'application/octet-stream');
+          if (isDownload) {
+            res.setHeader(
+              'Content-Disposition',
+              `attachment; filename="${safeAscii}"; filename*=UTF-8''${encodeURIComponent(downloadFilename)}`
+            );
+          } else {
+            res.setHeader('Content-Disposition', `inline; filename="${safeAscii}"`);
+          }
+          return driveResult.stream.pipe(res);
+        }
       }
 
-      return driveStream.pipe(res);
+      // For viewing images: Redirect 302 directly to Google CDN directLink
+      // Instant loading, zero serverless timeouts, zero bandwidth usage
+      res.setHeader('Cache-Control', 'public, max-age=86400');
+      return res.redirect(302, driveInfo.directLink);
     }
   } catch (driveErr) {
     console.warn(`Drive stream notice for ${filename}:`, driveErr.message);
   }
 
-  // 3. File not found: respond immediately with 404 (NEVER hang or call next() without response)
+  // 3. File not found
   const isDownload = req.query.download === '1' || req.query.download === 'true' || req.path.includes('/download/');
   if (isDownload) {
-    return res.status(404).send('Document not found on server.');
+    return res.status(404).send('Document not found on cloud storage.');
   }
-  return res.status(404).json({ success: false, message: `File "${filename}" not found on server.` });
+  return res.status(404).json({ success: false, message: `File "${filename}" not found on cloud storage.` });
 });
 
 // Serve uploaded files statically as fallback

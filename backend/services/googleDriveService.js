@@ -46,6 +46,102 @@ export const getDriveClient = () => {
   return cachedDriveClient;
 };
 
+// In-memory cache of files in Google Drive folder: filename/variations -> { id, name, mimeType, directLink, size }
+const cloudFileCache = new Map();
+let lastCacheRefreshTime = 0;
+
+/**
+ * Fetch and populate in-memory cloud file cache from Google Drive folder
+ */
+export const refreshDriveCache = async (force = false) => {
+  if (!isGoogleDriveConfigured()) return;
+  const now = Date.now();
+  if (!force && lastCacheRefreshTime && (now - lastCacheRefreshTime < 180000)) {
+    return;
+  }
+
+  try {
+    const drive = getDriveClient();
+    if (!drive) return;
+    const folderId = process.env.GOOGLE_DRIVE_FOLDER_ID;
+
+    let pageToken = null;
+    do {
+      const res = await drive.files.list({
+        q: `'${folderId}' in parents and trashed = false`,
+        fields: 'nextPageToken, files(id, name, mimeType, webViewLink, webContentLink, size)',
+        spaces: 'drive',
+        pageSize: 1000,
+        pageToken
+      });
+
+      if (res.data.files) {
+        for (const f of res.data.files) {
+          const entry = {
+            id: f.id,
+            name: f.name,
+            mimeType: f.mimeType,
+            size: f.size,
+            webViewLink: f.webViewLink,
+            webContentLink: f.webContentLink,
+            directLink: `https://lh3.googleusercontent.com/d/${f.id}`
+          };
+          cloudFileCache.set(f.name, entry);
+          cloudFileCache.set(f.id, entry);
+
+          const baseName = f.name.replace(/\.[^/.]+$/, '');
+          if (!cloudFileCache.has(baseName)) {
+            cloudFileCache.set(baseName, entry);
+          }
+        }
+      }
+      pageToken = res.data.nextPageToken;
+    } while (pageToken);
+
+    lastCacheRefreshTime = now;
+  } catch (err) {
+    console.warn('refreshDriveCache notice:', err.message);
+  }
+};
+
+/**
+ * Fast lookup for file in Google Drive folder with 0ms cache hits
+ */
+export const getGoogleDriveFileInfo = async (fileNameOrId) => {
+  if (!fileNameOrId) return null;
+  const key = String(fileNameOrId).trim();
+
+  // 1. Direct hit in memory cache
+  if (cloudFileCache.has(key)) return cloudFileCache.get(key);
+
+  const baseName = key.includes('.') ? key.replace(/\.[^/.]+$/, '') : key;
+  if (cloudFileCache.has(baseName)) return cloudFileCache.get(baseName);
+
+  const variations = [
+    `${baseName}.png`,
+    `${baseName}.jpg`,
+    `${baseName}.jpeg`,
+    `${baseName}.webp`,
+    `${baseName}.pdf`,
+    `${baseName}.docx`,
+    `${baseName}.xlsx`
+  ];
+  for (const v of variations) {
+    if (cloudFileCache.has(v)) return cloudFileCache.get(v);
+  }
+
+  // 2. Refresh cache once and try again
+  await refreshDriveCache();
+
+  if (cloudFileCache.has(key)) return cloudFileCache.get(key);
+  if (cloudFileCache.has(baseName)) return cloudFileCache.get(baseName);
+  for (const v of variations) {
+    if (cloudFileCache.has(v)) return cloudFileCache.get(v);
+  }
+
+  return null;
+};
+
 // In-flight upload promise lock to prevent concurrent duplicate uploads for the exact same file
 const inFlightUploads = new Map();
 
@@ -76,29 +172,18 @@ export const uploadToGoogleDrive = async (filePath, customFileName = null, mimeT
 
       const folderId = process.env.GOOGLE_DRIVE_FOLDER_ID;
 
-      // 1. DEDUPLICATION CHECK: Check if a file with this exact filename already exists in the cloud folder
-      try {
-        const existingCheck = await drive.files.list({
-          q: `'${folderId}' in parents and name = '${fileName}' and trashed = false`,
-          fields: 'files(id, name, webViewLink, webContentLink, size)',
-          spaces: 'drive',
-          pageSize: 1
-        });
-
-        if (existingCheck.data.files && existingCheck.data.files.length > 0) {
-          const existingFile = existingCheck.data.files[0];
-          console.log(`⚡ [Google Drive Dedup]: File "${fileName}" already exists in cloud folder (ID: ${existingFile.id}). Skipping duplicate!`);
-          return {
-            success: true,
-            fileId: existingFile.id,
-            name: existingFile.name,
-            webViewLink: existingFile.webViewLink,
-            webContentLink: existingFile.webContentLink,
-            directLink: `https://lh3.googleusercontent.com/d/${existingFile.id}`
-          };
-        }
-      } catch (checkErr) {
-        console.warn('Google Drive duplicate check notice:', checkErr.message);
+      // 1. DEDUPLICATION CHECK: Check in-memory cache or Drive list
+      const cached = await getGoogleDriveFileInfo(fileName);
+      if (cached) {
+        console.log(`⚡ [Google Drive Dedup]: File "${fileName}" already exists in cloud folder (ID: ${cached.id}). Skipping duplicate!`);
+        return {
+          success: true,
+          fileId: cached.id,
+          name: cached.name,
+          webViewLink: cached.webViewLink,
+          webContentLink: cached.webContentLink,
+          directLink: cached.directLink || `https://lh3.googleusercontent.com/d/${cached.id}`
+        };
       }
 
       // Detect MIME type if not provided
@@ -141,6 +226,20 @@ export const uploadToGoogleDrive = async (filePath, customFileName = null, mimeT
         // Permission might already be inherited from folder
       }
 
+      const entry = {
+        id: fileData.id,
+        name: fileData.name,
+        mimeType: detectedMime,
+        size: fileData.size,
+        webViewLink: fileData.webViewLink,
+        webContentLink: fileData.webContentLink,
+        directLink: `https://lh3.googleusercontent.com/d/${fileData.id}`
+      };
+      cloudFileCache.set(fileData.name, entry);
+      cloudFileCache.set(fileData.id, entry);
+      const baseName = fileData.name.replace(/\.[^/.]+$/, '');
+      cloudFileCache.set(baseName, entry);
+
       console.log(`☁️ [200GB Google Drive Upload Success]: "${fileName}" (ID: ${fileData.id})`);
 
       return {
@@ -164,57 +263,32 @@ export const uploadToGoogleDrive = async (filePath, customFileName = null, mimeT
 };
 
 /**
- * Find and stream a file from Google Drive if it is missing locally
+ * Find and stream a file from Google Drive if needed with 30s timeout
  */
 export const getFileStreamFromGoogleDrive = async (fileNameOrId) => {
   try {
     const drive = getDriveClient();
     if (!drive) return null;
 
-    let targetFileId = null;
+    let targetFileId = fileNameOrId;
+    let targetFileMeta = null;
 
-    // Timeout helper to prevent Google API from hanging requests
-    const withTimeout = (promise, ms = 3500) => {
+    const cached = await getGoogleDriveFileInfo(fileNameOrId);
+    if (cached) {
+      targetFileId = cached.id;
+      targetFileMeta = cached;
+    }
+
+    if (!targetFileId) return null;
+
+    // Timeout helper (30s timeout for streaming larger photos & PDFs)
+    const withTimeout = (promise, ms = 30000) => {
       let timer;
       const timeoutPromise = new Promise((_, reject) => {
         timer = setTimeout(() => reject(new Error('Google Drive stream timed out')), ms);
       });
       return Promise.race([promise, timeoutPromise]).finally(() => clearTimeout(timer));
     };
-
-    let targetFileMeta = null;
-
-    // If it looks like a filename, search by name in folder
-    if (fileNameOrId.includes('.') || fileNameOrId.length > 20) {
-      const folderId = process.env.GOOGLE_DRIVE_FOLDER_ID;
-      const baseName = fileNameOrId.includes('.') ? fileNameOrId.replace(/\.[^/.]+$/, "") : fileNameOrId;
-      const query = folderId
-        ? `'${folderId}' in parents and (name = '${fileNameOrId}' or name = '${baseName}' or name contains '${baseName}') and trashed = false`
-        : `(name = '${fileNameOrId}' or name = '${baseName}' or name contains '${baseName}') and trashed = false`;
-
-      const searchRes = await withTimeout(
-        drive.files.list({
-          q: query,
-          fields: 'files(id, name, mimeType)',
-          spaces: 'drive',
-          pageSize: 1
-        })
-      );
-
-      if (searchRes.data.files && searchRes.data.files.length > 0) {
-        targetFileMeta = searchRes.data.files[0];
-        targetFileId = targetFileMeta.id;
-      } else if (!fileNameOrId.includes('.') && !fileNameOrId.includes('/') && fileNameOrId.length >= 25 && fileNameOrId.length <= 45) {
-        targetFileId = fileNameOrId;
-      } else {
-        // File does not exist in Google Drive folder!
-        return null;
-      }
-    } else {
-      targetFileId = fileNameOrId;
-    }
-
-    if (!targetFileId) return null;
 
     const response = await withTimeout(
       drive.files.get(
@@ -327,11 +401,16 @@ export const deleteFromGoogleDrive = async (fileNameOrId) => {
       for (const f of searchRes.data.files) {
         await drive.files.delete({ fileId: f.id });
         console.log(`🗑️ [Google Drive Delete]: Removed "${f.name}" (ID: ${f.id})`);
+        cloudFileCache.delete(f.name);
+        cloudFileCache.delete(f.id);
+        const b = f.name.replace(/\.[^/.]+$/, '');
+        cloudFileCache.delete(b);
         deleted = true;
       }
     } else if (!fileNameOrId.includes('.') && !fileNameOrId.includes('/') && fileNameOrId.length >= 25 && fileNameOrId.length <= 45) {
       await drive.files.delete({ fileId: fileNameOrId });
       console.log(`🗑️ [Google Drive Delete]: Removed file ID "${fileNameOrId}"`);
+      cloudFileCache.delete(fileNameOrId);
       deleted = true;
     }
     return deleted;
