@@ -309,7 +309,7 @@ export default function RecoveryManager() {
 
   const totalPages = Math.ceil(filteredList.length / itemsPerPage) || 1;
 
-  // 1-Click WhatsApp Reminder Sender
+  // 1-Click WhatsApp Reminder Sender in Urdu
   const handleSendWhatsAppReminder = (item) => {
     let rawPhone = item.customerPhone?.replace(/\D/g, '') || '';
     if (rawPhone.startsWith('03')) {
@@ -317,25 +317,26 @@ export default function RecoveryManager() {
     }
 
     const missedDetailStr = item.missedMonths?.length > 0 
-      ? `\n*Missing Installments:* ${item.missedMonths.map(m => m.monthKey + (m.status === 'SHORT' ? ` (Rs. ${m.remainingAmount} Baqi)` : '')).join(', ')}`
+      ? `\n*بقایا اقساط (Missing Installments):* ${item.missedMonths.map(m => m.monthKey + (m.status === 'SHORT' ? ` (${m.remainingAmount?.toLocaleString()} روپے باقی)` : '')).join(', ')}`
       : '';
 
     const advanceDetailStr = item.hasPendingAdvance
-      ? `\n*Remaining Advance Pending:* Rs. ${item.remainingAdvanceAmount?.toLocaleString()}${item.remainingAdvancePromiseDateStr ? ` (Wada: ${item.remainingAdvancePromiseDateStr})` : ''}`
+      ? `\n*بقایا ایڈوانس رقم:* Rs. ${item.remainingAdvanceAmount?.toLocaleString()}${item.remainingAdvancePromiseDateStr ? ` (وعدہ تاریخ: ${item.remainingAdvancePromiseDateStr})` : ''}`
       : '';
 
     const message = 
-      `*PAYMENT REMINDER - HAJJI MOHAMMAD NABI AUTOS*\n\n` +
-      `Dear *${item.customerName}* (${item.customerId}),\n\n` +
-      `Aap ki *${item.itemName}* ki monthly installment overdue ho chuki hai.${missedDetailStr}${advanceDetailStr}\n` +
-      `*Total Overdue Amount:* Rs. ${item.totalMissedAmount.toLocaleString()}\n` +
-      `*Monthly Target:* Rs. ${item.monthlyAmount?.toLocaleString()}\n` +
-      `*Remaining Total Balance:* Rs. ${item.remainingBalance?.toLocaleString()}\n\n` +
-      `Meharbani kar ke apni kist jama karwa dein ya online send kar dein:\n` +
-      `📲 *03232200325* (EasyPaisa)\n` +
-      `📲 *03030246040* (JazzCash)\n\n` +
-      `*Shop Address:* Shop # 14, Sector 16-B, Main Godhra Stop New Karachi\n` +
-      `Shukriya!`;
+      `*قسط ادائیگی کی یاددہانی - حاجی محمد نبی آٹوز*\n\n` +
+      `محترم جناب *${item.customerName}* (${item.customerId})،\n` +
+      `السلام علیکم!\n\n` +
+      `آپ کی *${item.itemName}* کی ماہانہ قسط واجب الادا (Overdue) ہو چکی ہے۔${missedDetailStr}${advanceDetailStr}\n` +
+      `*کل واجب الادا رقم (Total Overdue):* Rs. ${item.totalMissedAmount.toLocaleString()}\n` +
+      `*ماہانہ قسط (Monthly Target):* Rs. ${item.monthlyAmount?.toLocaleString()}\n` +
+      `*کل بقایا بیلنس (Remaining Balance):* Rs. ${item.remainingBalance?.toLocaleString()}\n\n` +
+      `مہربانی فرما کر اپنی قسط دکان پر جمع کروا دیں یا آن لائن بھیج دیں:\n` +
+      `📲 *03232200325* (ایزی پیسہ - EasyPaisa)\n` +
+      `📲 *03030246040* (جاز کیش - JazzCash)\n\n` +
+      `📍 *دکان کا پتہ:* شاپ نمبر 14، سیکٹر 16-B، مین گودھرا اسٹاپ، نیو کراچی\n` +
+      `شکریہ!`;
 
     window.open(`https://wa.me/${rawPhone}?text=${encodeURIComponent(message)}`, '_blank');
   };

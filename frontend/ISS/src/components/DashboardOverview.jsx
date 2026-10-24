@@ -130,14 +130,15 @@ export default function DashboardOverview({ setActiveTab, userName }) {
     const regStr = regParts.length > 0 ? ` (${regParts.join(' | ')})` : '';
 
     const message = 
-      `*TODAY'S INSTALLMENT DUE REMINDER - HAJJI MOHAMMAD NABI AUTOS*\n\n` +
-      `Aap ki *${sale.itemName || sale.productName || 'Item'}*${regStr} ki monthly kist *Rs. ${monthlyVal.toLocaleString()}* aaj due hai.\n\n` +
-      `Meharbani kar ke apni kist jama karwa dein ya online send kar dein:\n` +
-      `📲 *03232200325* (EasyPaisa)\n` +
-      `📲 *03030246040* (JazzCash)\n\n` +
-      `*Remaining Balance:* Rs. ${remainingVal.toLocaleString()}\n\n` +
-      `*Shop Address:* Shop # 14, Sector 16-B, Main Godhra Stop New Karachi\n` +
-      `Shukriya!`;
+      `*آج کی قسط کی یاددہانی - حاجی محمد نبی آٹوز*\n\n` +
+      `السلام علیکم!\n\n` +
+      `آپ کی *${sale.itemName || sale.productName || 'آئٹم'}*${regStr} کی ماہانہ قسط *Rs. ${monthlyVal.toLocaleString()}* آج واجب الادا ہے۔\n\n` +
+      `مہربانی فرما کر اپنی قسط دکان پر جمع کروا دیں یا آن لائن بھیج دیں:\n` +
+      `📲 *03232200325* (ایزی پیسہ - EasyPaisa)\n` +
+      `📲 *03030246040* (جاز کیش - JazzCash)\n\n` +
+      `*کل بقایا بیلنس:* Rs. ${remainingVal.toLocaleString()}\n\n` +
+      `📍 *دکان کا پتہ:* شاپ نمبر 14، سیکٹر 16-B، مین گودھرا اسٹاپ، نیو کراچی\n` +
+      `شکریہ!`;
 
     window.open(`https://wa.me/${formattedPhone}?text=${encodeURIComponent(message)}`, '_blank');
   };
