@@ -108,7 +108,8 @@ const installmentSaleSchema = new mongoose.Schema(
     documents: [
       {
         title: { type: String, default: '' },
-        fileUrl: { type: String, default: '' }
+        fileUrl: { type: String, default: '' },
+        driveFileId: { type: String, default: '' }
       }
     ],
 

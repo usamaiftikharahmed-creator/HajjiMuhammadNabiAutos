@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { X, User, Package, History, DollarSign, Printer, Send, ExternalLink, Camera, Download, RefreshCw, Trash2 } from 'lucide-react';
+import { X, User, Package, History, DollarSign, Printer, Send, ExternalLink, Camera, Download, RefreshCw, Trash2, Paperclip, FileText } from 'lucide-react';
 import toast from 'react-hot-toast';
 import PaymentReceiptModal from './PaymentReceiptModal';
 import A4ReceiptModal from './A4ReceiptModal';
@@ -14,6 +14,7 @@ export default function ViewDetailsModal({ selectedSale, onClose, onRefresh, onO
   const [showA4Modal, setShowA4Modal] = useState(false);
   const [zoomImg, setZoomImg] = useState(null);
   const [downloadingPhoto, setDownloadingPhoto] = useState(false);
+  const [downloadingDocId, setDownloadingDocId] = useState(null);
 
   const handleDownloadPhoto = async (e) => {
     if (e) {
@@ -69,6 +70,42 @@ export default function ViewDetailsModal({ selectedSale, onClose, onRefresh, onO
     }
   };
 
+  const handleDownloadDoc = async (e, doc) => {
+    if (e) {
+      if (e.preventDefault) e.preventDefault();
+      if (e.stopPropagation) e.stopPropagation();
+    }
+    const docId = doc._id || doc.url;
+    setDownloadingDocId(docId);
+    const cleanTitle = (doc.title || 'Document').replace(/[^\w\s-]/g, '_').trim();
+    try {
+      const targetUrl = `${doc.url}${doc.url.includes('?') ? '&' : '?'}download=1&title=${encodeURIComponent(cleanTitle)}`;
+      const res = await fetch(targetUrl);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const blob = await res.blob();
+      let ext = '';
+      if (blob.type === 'application/pdf') ext = '.pdf';
+      else if (blob.type === 'image/jpeg') ext = '.jpg';
+      else if (blob.type === 'image/png') ext = '.png';
+      else if (blob.type === 'image/webp') ext = '.webp';
+
+      const fileName = `${cleanTitle}${ext || ''}`;
+      const blobUrl = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = blobUrl;
+      link.download = fileName;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      setTimeout(() => window.URL.revokeObjectURL(blobUrl), 2000);
+      toast.success(`"${fileName}" download ho gaya!`);
+    } catch (err) {
+      window.open(`${doc.url}${doc.url.includes('?') ? '&' : '?'}download=1&title=${encodeURIComponent(cleanTitle)}`, '_blank');
+    } finally {
+      setDownloadingDocId(null);
+    }
+  };
+
   const handleOpenPay = () => {
     if (typeof onOpenPayModal === 'function') {
       onOpenPayModal();
@@ -83,6 +120,63 @@ export default function ViewDetailsModal({ selectedSale, onClose, onRefresh, onO
 
   const promiseInfo = useMemo(() => {
     return getPromiseMonthsInfo(selectedSale);
+  }, [selectedSale]);
+
+  const allDocs = useMemo(() => {
+    if (!selectedSale) return [];
+    const list = [];
+    const customer = typeof selectedSale.customer === 'object' ? selectedSale.customer : {};
+
+    // 1. Extra documents attached to sale
+    if (selectedSale.documents && Array.isArray(selectedSale.documents)) {
+      selectedSale.documents.forEach((doc, idx) => {
+        if (!doc) return;
+        const filePath = typeof doc === 'string' ? doc : (doc.filePath || doc.fileUrl || doc.driveFileId);
+        if (!filePath) return;
+        const title = (typeof doc === 'object' && doc.title) ? doc.title : `Attached Document #${idx + 1}`;
+        list.push({
+          _id: doc._id || `extra_${idx}`,
+          title,
+          url: getFileUrl(filePath),
+          isExtra: true
+        });
+      });
+    }
+
+    // 2. Profile Photo
+    const profilePic = selectedSale.profilePic || customer?.profilePic;
+    if (profilePic) {
+      list.push({
+        _id: 'profilePic',
+        title: 'Customer Photo',
+        url: getFileUrl(profilePic),
+        isPhoto: true
+      });
+    }
+
+    // 3. Customer & Guarantor CNICs
+    const cnicFields = [
+      { key: 'cnicFront', title: 'Customer CNIC (Front)' },
+      { key: 'cnicBack', title: 'Customer CNIC (Back)' },
+      { key: 'guarantorCnicFront', title: 'Guarantor 1 CNIC (Front)' },
+      { key: 'guarantorCnicBack', title: 'Guarantor 1 CNIC (Back)' },
+      { key: 'guarantor2CnicFront', title: 'Guarantor 2 CNIC (Front)' },
+      { key: 'guarantor2CnicBack', title: 'Guarantor 2 CNIC (Back)' }
+    ];
+
+    cnicFields.forEach(({ key, title }) => {
+      const path = selectedSale[key] || customer?.[key];
+      if (path) {
+        list.push({
+          _id: key,
+          title,
+          url: getFileUrl(path),
+          isCnic: true
+        });
+      }
+    });
+
+    return list;
   }, [selectedSale]);
 
   if (!selectedSale) return null;
@@ -381,6 +475,72 @@ export default function ViewDetailsModal({ selectedSale, onClose, onRefresh, onO
               )}
             </div>
           </div>
+
+          {/* Attached Documents & CNIC */}
+          {allDocs.length > 0 && (
+            <div className="bg-slate-950 p-4 rounded-xl border border-slate-800 space-y-2.5">
+              <div className="text-xs font-bold text-indigo-400 uppercase tracking-wider flex items-center justify-between border-b border-slate-800 pb-2">
+                <span className="flex items-center gap-1.5">
+                  <Paperclip className="w-3.5 h-3.5" /> Attached Documents & CNIC ({allDocs.length})
+                </span>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {allDocs.map((doc) => (
+                  <div
+                    key={doc._id || doc.url}
+                    className={`inline-flex items-center rounded-lg overflow-hidden shadow-sm transition border ${
+                      doc.isPhoto
+                        ? 'bg-blue-950/60 border-blue-700/60 hover:border-blue-500'
+                        : doc.isCnic
+                          ? 'bg-amber-950/50 border-amber-700/60 hover:border-amber-500'
+                          : 'bg-indigo-950/70 border-indigo-700/60 hover:border-indigo-500'
+                    }`}
+                  >
+                    <a
+                      href={doc.url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className={`inline-flex items-center gap-1.5 px-2.5 py-1 text-xs transition ${
+                        doc.isPhoto
+                          ? 'text-blue-200 hover:text-white hover:bg-blue-800/50'
+                          : doc.isCnic
+                            ? 'text-amber-200 hover:text-white hover:bg-amber-800/50'
+                            : 'text-indigo-200 hover:text-white hover:bg-indigo-800/50'
+                      }`}
+                      title="Open / View Document"
+                    >
+                      {doc.isPhoto ? (
+                        <Camera className="w-3.5 h-3.5 shrink-0 text-blue-400" />
+                      ) : (
+                        <Paperclip className={`w-3.5 h-3.5 shrink-0 ${doc.isCnic ? 'text-amber-400' : 'text-indigo-400'}`} />
+                      )}
+                      <span className="font-medium max-w-[150px] sm:max-w-[200px] truncate">{doc.title}</span>
+                      <ExternalLink className="w-3 h-3 opacity-70" />
+                    </a>
+                    <button
+                      type="button"
+                      onClick={(e) => handleDownloadDoc(e, doc)}
+                      disabled={downloadingDocId === (doc._id || doc.url)}
+                      className={`px-2 py-1 border-l transition flex items-center justify-center cursor-pointer ${
+                        doc.isPhoto
+                          ? 'bg-blue-900/60 hover:bg-emerald-600 text-blue-300 hover:text-white border-blue-700/50'
+                          : doc.isCnic
+                            ? 'bg-amber-900/60 hover:bg-emerald-600 text-amber-300 hover:text-white border-amber-700/50'
+                            : 'bg-indigo-900/60 hover:bg-emerald-600 text-indigo-300 hover:text-white border-indigo-700/50'
+                      }`}
+                      title="Download File"
+                    >
+                      {downloadingDocId === (doc._id || doc.url) ? (
+                        <RefreshCw className="w-3 h-3 animate-spin text-emerald-400" />
+                      ) : (
+                        <Download className="w-3 h-3" />
+                      )}
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Ledger Table */}
           <div className="space-y-3">

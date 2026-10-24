@@ -206,6 +206,43 @@ export const getOrCreateCustomerDriveFolder = async (customerId, customerName = 
   }
 };
 
+/**
+ * List all files in a customer's dedicated Google Drive folder
+ */
+export const listCustomerDriveFiles = async (customerId, customerName = '') => {
+  if (!isGoogleDriveConfigured() || !customerId) return [];
+  try {
+    const folderId = await getOrCreateCustomerDriveFolder(customerId, customerName);
+    if (!folderId || folderId === process.env.GOOGLE_DRIVE_FOLDER_ID) {
+      return [];
+    }
+    const drive = getDriveClient();
+    if (!drive) return [];
+
+    const res = await drive.files.list({
+      q: `'${folderId}' in parents and trashed = false and mimeType != 'application/vnd.google-apps.folder'`,
+      fields: 'files(id, name, mimeType, webViewLink, webContentLink, size, createdTime)',
+      pageSize: 100
+    });
+
+    return (res.data.files || []).map(f => ({
+      driveFileId: f.id,
+      name: f.name,
+      fileName: f.name,
+      fileUrl: `/uploads/${f.name}`,
+      mimeType: f.mimeType,
+      size: f.size,
+      createdTime: f.createdTime,
+      webViewLink: f.webViewLink,
+      webContentLink: f.webContentLink,
+      directLink: `https://lh3.googleusercontent.com/d/${f.id}`
+    }));
+  } catch (err) {
+    console.warn(`Error listing files in customer Drive folder for ${customerId}:`, err.message);
+    return [];
+  }
+};
+
 // In-flight upload promise lock to prevent concurrent duplicate uploads for the exact same file
 const inFlightUploads = new Map();
 

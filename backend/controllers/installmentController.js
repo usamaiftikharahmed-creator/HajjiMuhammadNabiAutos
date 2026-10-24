@@ -11,7 +11,7 @@ import { invalidateDashboardCache } from '../routes/dashboardRoutes.js';
 import { triggerDebouncedLiveJsonSync } from '../services/backupService.js';
 import { offlineDb } from '../services/offlineDb.js';
 import { mirrorUploadedFile, getUploadDirs } from '../services/uploadService.js';
-import { deleteFromGoogleDrive, uploadToGoogleDrive } from '../services/googleDriveService.js';
+import { deleteFromGoogleDrive, uploadToGoogleDrive, listCustomerDriveFiles } from '../services/googleDriveService.js';
 
 // Process-wide Singleton RAM cache for sub-millisecond page loads (<1ms)
 const SALES_CACHE_TTL_MS = 60000; // 60 seconds TTL
@@ -597,6 +597,62 @@ export const getCustomerLedger = async (req, res) => {
         .lean()
     ]);
 
+    // Auto-sync all files from customer's Google Drive folder into the primary sale documents
+    try {
+      if (installmentSales.length > 0 && customer.customerId) {
+        const driveFiles = await listCustomerDriveFiles(customer.customerId, customer.name);
+        if (driveFiles && driveFiles.length > 0) {
+          const primarySale = installmentSales[0];
+          let updatedDocs = false;
+          if (!primarySale.documents) primarySale.documents = [];
+
+          // Known identity files to prevent duplicating CNICs/Photos in documents
+          const knownFiles = new Set([
+            path.basename(customer.profilePic || ''),
+            path.basename(primarySale.profilePic || ''),
+            path.basename(primarySale.cnicFront || ''),
+            path.basename(primarySale.cnicBack || ''),
+            path.basename(primarySale.guarantor1CnicFront || ''),
+            path.basename(primarySale.guarantor1CnicBack || ''),
+            path.basename(primarySale.guarantor2CnicFront || ''),
+            path.basename(primarySale.guarantor2CnicBack || ''),
+          ].filter(Boolean));
+
+          for (const df of driveFiles) {
+            const fileName = path.basename(df.name);
+            if (knownFiles.has(fileName)) continue;
+
+            const exists = primarySale.documents.some(d => 
+              (d.fileUrl && path.basename(d.fileUrl) === fileName) ||
+              (d.driveFileId && d.driveFileId === df.driveFileId)
+            );
+
+            if (!exists) {
+              const cleanTitle = fileName.replace(/^\d+-\d+\./, '').trim() || 'Attached Document';
+              primarySale.documents.push({
+                title: cleanTitle,
+                fileUrl: `/uploads/${fileName}`,
+                driveFileId: df.driveFileId
+              });
+              updatedDocs = true;
+            }
+          }
+
+          if (updatedDocs) {
+            InstallmentSale.findById(primarySale._id).then(async (saleDoc) => {
+              if (saleDoc) {
+                saleDoc.documents = primarySale.documents;
+                saleDoc.markModified('documents');
+                await saleDoc.save();
+              }
+            }).catch(() => {});
+          }
+        }
+      }
+    } catch (driveSyncErr) {
+      console.warn('Drive auto-sync notice:', driveSyncErr.message);
+    }
+
     res.json({
       success: true,
       customer,
@@ -902,17 +958,20 @@ export const uploadSaleDocuments = async (req, res) => {
       newDocuments.push({ title, fileUrl, driveFileId });
     }
 
-    // Save to MongoDB Atlas with Google Drive fileUrl & driveFileId
-    const updatedSale = await InstallmentSale.findByIdAndUpdate(
-      sale._id,
-      { $push: { documents: { $each: newDocuments } } },
-      { new: true }
-    );
+    // Fetch fresh sale document to ensure array push and schema casting are 100% reliable
+    const targetSale = await InstallmentSale.findById(sale._id);
+    if (!targetSale) {
+      return res.status(404).json({ success: false, message: 'Installment account not found' });
+    }
+    if (!targetSale.documents) targetSale.documents = [];
+    targetSale.documents.push(...newDocuments);
+    targetSale.markModified('documents');
+    await targetSale.save();
 
     // Mirror to offlineDb JSON
     try {
-      if (offlineDb?.installmentSales?.findByIdAndUpdate && updatedSale) {
-        offlineDb.installmentSales.findByIdAndUpdate(sale._id, { $set: { documents: updatedSale.documents } }).catch(() => {});
+      if (offlineDb?.installmentSales?.findByIdAndUpdate) {
+        offlineDb.installmentSales.findByIdAndUpdate(sale._id, { $set: { documents: targetSale.documents } }).catch(() => {});
       }
     } catch (e) {}
 
@@ -921,7 +980,7 @@ export const uploadSaleDocuments = async (req, res) => {
     res.json({
       success: true,
       message: 'Document(s) uploaded successfully',
-      documents: updatedSale ? updatedSale.documents : sale.documents,
+      documents: targetSale.documents,
       saleId: sale._id
     });
   } catch (error) {
