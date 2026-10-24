@@ -98,7 +98,36 @@ export const createInstallmentSale = async (req, res) => {
       });
     }
 
-    // Process uploaded files if any
+    // Find or determine customer first so files are saved directly in their Google Drive folder!
+    let customer = await Customer.findOne({ 
+      $or: [
+        { phone },
+        ...(cnic ? [{ cnic }] : [])
+      ]
+    });
+
+    let assignedCustomerId = customer?.customerId;
+    if (!assignedCustomerId) {
+      let maxCustNum = 1000;
+      const allCusts = await Customer.find({}, { customerId: 1 }).lean();
+      allCusts.forEach(c => {
+        if (c.customerId && typeof c.customerId === 'string') {
+          const match = c.customerId.match(/\d+/);
+          if (match) {
+            const num = parseInt(match[0], 10);
+            if (!isNaN(num) && num > maxCustNum) maxCustNum = num;
+          }
+        }
+      });
+      assignedCustomerId = `CUST-${maxCustNum + 1}`;
+    }
+
+    const customerContext = {
+      customerId: assignedCustomerId,
+      customerName: customerName || customer?.name || ''
+    };
+
+    // Process uploaded files directly into customer's Google Drive folder
     let profilePic = '';
     let cnicFront = '';
     let cnicBack = '';
@@ -112,7 +141,7 @@ export const createInstallmentSale = async (req, res) => {
       for (const file of req.files) {
         let driveResult = null;
         try {
-          driveResult = await uploadToGoogleDrive(file.path, file.filename);
+          driveResult = await uploadToGoogleDrive(file.path, file.filename, null, customerContext);
         } catch (err) {
           console.warn('Google Drive upload notice:', err.message);
         }
@@ -151,30 +180,9 @@ export const createInstallmentSale = async (req, res) => {
       }
     }
 
-    // Find or create customer
-    let customer = await Customer.findOne({ 
-      $or: [
-        { phone },
-        ...(cnic ? [{ cnic }] : [])
-      ]
-    });
-
     if (!customer) {
-      let maxCustNum = 1000;
-      const allCusts = await Customer.find({}, { customerId: 1 }).lean();
-      allCusts.forEach(c => {
-        if (c.customerId && typeof c.customerId === 'string') {
-          const match = c.customerId.match(/\d+/);
-          if (match) {
-            const num = parseInt(match[0], 10);
-            if (!isNaN(num) && num > maxCustNum) maxCustNum = num;
-          }
-        }
-      });
-      const customerId = `CUST-${maxCustNum + 1}`;
-
       customer = await Customer.create({
-        customerId,
+        customerId: assignedCustomerId,
         name: customerName,
         phone,
         phone2,
@@ -614,10 +622,13 @@ export const updateCustomer = async (req, res) => {
     const picFile = (req.files && Array.isArray(req.files))
       ? req.files.find(f => f.fieldname === 'profilePic' || f.fieldname === 'photo' || f.fieldname === 'customerPhoto')
       : req.file;
+    const existingCust = await Customer.findById(id);
+    const customerContext = { customerId: existingCust?.customerId, customerName: existingCust?.name || name };
+
     if (picFile) {
       let driveResult = null;
       try {
-        driveResult = await uploadToGoogleDrive(picFile.path, picFile.filename);
+        driveResult = await uploadToGoogleDrive(picFile.path, picFile.filename, null, customerContext);
       } catch (err) {}
       if (driveResult) {
         try { fs.unlinkSync(picFile.path); } catch (e) {}
@@ -672,9 +683,11 @@ export const uploadCustomerPhoto = async (req, res) => {
     let profilePic = '';
     const file = (req.files && Array.isArray(req.files) && req.files.length > 0) ? req.files[0] : req.file;
     if (file) {
+      const existingCust = await Customer.findById(id);
+      const customerContext = { customerId: existingCust?.customerId, customerName: existingCust?.name };
       let driveResult = null;
       try {
-        driveResult = await uploadToGoogleDrive(file.path, file.filename);
+        driveResult = await uploadToGoogleDrive(file.path, file.filename, null, customerContext);
       } catch (err) {}
       if (driveResult) {
         try { fs.unlinkSync(file.path); } catch (e) {}
@@ -858,12 +871,21 @@ export const uploadSaleDocuments = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Installment account not found' });
     }
 
+    let customer = null;
+    if (sale.customer) {
+      customer = await Customer.findById(sale.customer);
+    }
+    const customerContext = { 
+      customerId: customer?.customerId || sale.customerId, 
+      customerName: customer?.name 
+    };
+
     const newDocuments = [];
     for (let idx = 0; idx < req.files.length; idx++) {
       const file = req.files[idx];
       let driveResult = null;
       try {
-        driveResult = await uploadToGoogleDrive(file.path, file.filename);
+        driveResult = await uploadToGoogleDrive(file.path, file.filename, null, customerContext);
       } catch (mirrorErr) {
         console.warn('uploadToGoogleDrive notice:', mirrorErr.message);
       }

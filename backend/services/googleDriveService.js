@@ -68,8 +68,8 @@ export const refreshDriveCache = async (force = false) => {
     let pageToken = null;
     do {
       const res = await drive.files.list({
-        q: `'${folderId}' in parents and trashed = false`,
-        fields: 'nextPageToken, files(id, name, mimeType, webViewLink, webContentLink, size)',
+        q: "trashed = false and mimeType != 'application/vnd.google-apps.folder'",
+        fields: 'nextPageToken, files(id, name, mimeType, webViewLink, webContentLink, size, parents)',
         spaces: 'drive',
         pageSize: 1000,
         pageToken
@@ -142,13 +142,77 @@ export const getGoogleDriveFileInfo = async (fileNameOrId) => {
   return null;
 };
 
+// In-memory cache for customer folders to avoid repeated Drive API searches
+const customerFolderCache = new Map();
+
+/**
+ * Get or create a dedicated folder for a customer inside the root Google Drive folder.
+ * Name format: "CUST 1001 - Customer Name" (or "CUST 1001" if name is not provided)
+ */
+export const getOrCreateCustomerDriveFolder = async (customerId, customerName = '') => {
+  if (!isGoogleDriveConfigured() || !customerId) return process.env.GOOGLE_DRIVE_FOLDER_ID;
+
+  const rawId = String(customerId).trim();
+  const digitsMatch = rawId.match(/\d+/);
+  const numStr = digitsMatch ? digitsMatch[0] : '';
+  const cleanId = digitsMatch ? `CUST-${numStr}` : rawId.toUpperCase();
+  const spaceId = digitsMatch ? `CUST ${numStr}` : rawId.toUpperCase();
+
+  const cacheKey = numStr || cleanId;
+  if (customerFolderCache.has(cacheKey)) {
+    return customerFolderCache.get(cacheKey);
+  }
+
+  try {
+    const drive = getDriveClient();
+    if (!drive) return process.env.GOOGLE_DRIVE_FOLDER_ID;
+
+    const rootFolderId = process.env.GOOGLE_DRIVE_FOLDER_ID;
+
+    // 1. Check if folder already exists in Drive under rootFolderId
+    const searchRes = await drive.files.list({
+      q: `'${rootFolderId}' in parents and mimeType = 'application/vnd.google-apps.folder' and (name contains '${cleanId}' or name contains '${spaceId}') and trashed = false`,
+      fields: 'files(id, name)',
+      spaces: 'drive',
+      pageSize: 5
+    });
+
+    if (searchRes.data.files && searchRes.data.files.length > 0) {
+      const folder = searchRes.data.files[0];
+      customerFolderCache.set(cacheKey, folder.id);
+      return folder.id;
+    }
+
+    // 2. Create customer folder: "CUST 1001 - Name"
+    const cleanName = customerName ? String(customerName).trim().replace(/[\\/:*?"<>|]/g, '') : '';
+    const folderTitle = cleanName ? `${spaceId} - ${cleanName}` : spaceId;
+
+    const createRes = await drive.files.create({
+      resource: {
+        name: folderTitle,
+        mimeType: 'application/vnd.google-apps.folder',
+        parents: [rootFolderId]
+      },
+      fields: 'id, name'
+    });
+
+    const newFolderId = createRes.data.id;
+    customerFolderCache.set(cacheKey, newFolderId);
+    console.log(`📁 [Google Drive Customer Folder Created]: "${folderTitle}" (ID: ${newFolderId})`);
+    return newFolderId;
+  } catch (err) {
+    console.warn(`Error getting/creating customer folder for ${customerId}:`, err.message);
+    return process.env.GOOGLE_DRIVE_FOLDER_ID;
+  }
+};
+
 // In-flight upload promise lock to prevent concurrent duplicate uploads for the exact same file
 const inFlightUploads = new Map();
 
 /**
- * Upload a file directly to the user's 200GB Google One Drive folder with duplicate prevention
+ * Upload a file directly to the user's 200GB Google One Drive customer folder with duplicate prevention
  */
-export const uploadToGoogleDrive = async (filePath, customFileName = null, mimeType = null) => {
+export const uploadToGoogleDrive = async (filePath, customFileName = null, mimeType = null, customerContext = null) => {
   const fileName = customFileName || path.basename(filePath);
 
   // If this exact file is currently being uploaded in parallel, reuse the existing promise
@@ -170,7 +234,16 @@ export const uploadToGoogleDrive = async (filePath, customFileName = null, mimeT
         return null;
       }
 
-      const folderId = process.env.GOOGLE_DRIVE_FOLDER_ID;
+      let targetFolderId = process.env.GOOGLE_DRIVE_FOLDER_ID;
+      if (customerContext && (customerContext.customerId || customerContext.id)) {
+        const custId = customerContext.customerId || customerContext.id;
+        const custName = customerContext.customerName || customerContext.name || '';
+        try {
+          targetFolderId = await getOrCreateCustomerDriveFolder(custId, custName);
+        } catch (fErr) {
+          console.warn('Folder creation notice:', fErr.message);
+        }
+      }
 
       // 1. DEDUPLICATION CHECK: Check in-memory cache or Drive list
       const cached = await getGoogleDriveFileInfo(fileName);
@@ -200,7 +273,7 @@ export const uploadToGoogleDrive = async (filePath, customFileName = null, mimeT
 
       const fileMetadata = {
         name: fileName,
-        parents: [folderId]
+        parents: [targetFolderId]
       };
 
       const media = {
@@ -385,9 +458,7 @@ export const deleteFromGoogleDrive = async (fileNameOrId) => {
     const folderId = process.env.GOOGLE_DRIVE_FOLDER_ID;
     const baseName = fileNameOrId.includes('.') ? fileNameOrId.replace(/\.[^/.]+$/, "") : fileNameOrId;
 
-    const query = folderId
-      ? `'${folderId}' in parents and (name = '${fileNameOrId}' or name = '${baseName}') and trashed = false`
-      : `(name = '${fileNameOrId}' or name = '${baseName}') and trashed = false`;
+    const query = `(name = '${fileNameOrId}' or name = '${baseName}') and trashed = false`;
 
     const searchRes = await drive.files.list({
       q: query,
