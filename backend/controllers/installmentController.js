@@ -1104,3 +1104,176 @@ export const updatePromiseDate = async (req, res) => {
     res.status(500).json({ success: false, message: error.message });
   }
 };
+
+// 8. Delete Installment Sale (Mistake Entry Reversal)
+export const deleteInstallmentSale = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const sale = await InstallmentSale.findById(id).populate('customer');
+    if (!sale) {
+      return res.status(404).json({ success: false, message: 'Installment sale not found' });
+    }
+
+    const customerObj = sale.customer;
+    const customerId = customerObj?._id || sale.customer;
+    const customerName = customerObj?.name || 'Customer';
+    const itemName = sale.itemName || 'Item';
+
+    // 1. Delete associated documents and photos from Google Drive & local disk
+    const filesToDelete = [];
+    if (sale.documents && Array.isArray(sale.documents)) {
+      for (const doc of sale.documents) {
+        if (doc.driveFileId) filesToDelete.push(doc.driveFileId);
+        if (doc.fileUrl) filesToDelete.push(path.basename(doc.fileUrl));
+      }
+    }
+    ['cnicFront', 'cnicBack', 'guarantor1CnicFront', 'guarantor1CnicBack', 'guarantor2CnicFront', 'guarantor2CnicBack'].forEach(k => {
+      if (sale[k]) filesToDelete.push(path.basename(sale[k]));
+    });
+
+    for (const f of filesToDelete) {
+      try {
+        await deleteFromGoogleDrive(f);
+      } catch (err) {}
+      getUploadDirs().forEach(dir => {
+        try {
+          const p = path.join(dir, f);
+          if (fs.existsSync(p)) fs.unlinkSync(p);
+        } catch (e) {}
+      });
+    }
+
+    // 2. Delete all payments associated with this mistake sale
+    await Payment.deleteMany({
+      $or: [
+        { installmentSale: sale._id },
+        { sale: sale._id }
+      ]
+    });
+
+    // 3. Delete the installment sale itself
+    await InstallmentSale.findByIdAndDelete(id);
+
+    // 4. Mirror deletion to offlineDb JSON
+    try {
+      if (offlineDb?.installmentSales?.findByIdAndDelete) {
+        offlineDb.installmentSales.findByIdAndDelete(id).catch(() => {});
+      }
+      if (offlineDb?.payments?.deleteMany) {
+        offlineDb.payments.deleteMany({
+          $or: [
+            { installmentSale: id },
+            { sale: id }
+          ]
+        }).catch(() => {});
+      }
+    } catch (e) {}
+
+    // 5. If this customer has no other sales, remove empty customer profile
+    if (customerId) {
+      const remainingSales = await InstallmentSale.countDocuments({ customer: customerId });
+      if (remainingSales === 0) {
+        await Customer.findByIdAndDelete(customerId);
+        try {
+          if (offlineDb?.customers?.findByIdAndDelete) {
+            offlineDb.customers.findByIdAndDelete(customerId).catch(() => {});
+          }
+        } catch (e) {}
+      }
+    }
+
+    // 6. Invalidate caches
+    invalidateSalesCache();
+
+    // 7. Audit log
+    await logActivity({
+      req,
+      action: 'DELETE_INSTALLMENT_SALE',
+      module: 'Installments',
+      details: `Mistake installment sale deleted for "${customerName}" (${itemName}, Total: Rs. ${sale.totalAmount})`,
+      targetId: sale._id,
+      targetName: customerName
+    });
+
+    res.json({
+      success: true,
+      message: `Installment sale for "${itemName}" has been successfully deleted.`
+    });
+  } catch (error) {
+    console.error('Delete Installment Sale Error:', error.message);
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// 9. Delete a Payment Entry (Mistake Payment Reversal)
+export const deletePayment = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const payment = await Payment.findById(id);
+    if (!payment) {
+      return res.status(404).json({ success: false, message: 'Payment entry not found' });
+    }
+
+    const saleId = payment.installmentSale || payment.sale;
+    const amountPaid = Number(payment.amountPaid || payment.amount || 0);
+
+    // If linked to a sale, restore the sale balances
+    let sale = null;
+    if (saleId) {
+      sale = await InstallmentSale.findById(saleId).populate('customer');
+      if (sale) {
+        const newRecovered = Math.max(0, Number(sale.totalRecoveredAmount || 0) - amountPaid);
+        const newBalance = Number(sale.remainingBalance || 0) + amountPaid;
+        const newStatus = newBalance <= 0 ? 'completed' : 'active';
+
+        sale.totalRecoveredAmount = newRecovered;
+        sale.remainingBalance = newBalance;
+        sale.status = newStatus;
+        await sale.save();
+
+        try {
+          if (offlineDb?.installmentSales?.findByIdAndUpdate) {
+            offlineDb.installmentSales.findByIdAndUpdate(saleId, {
+              $set: {
+                totalRecoveredAmount: newRecovered,
+                remainingBalance: newBalance,
+                status: newStatus
+              }
+            }).catch(() => {});
+          }
+        } catch (e) {}
+      }
+    }
+
+    // Delete payment record
+    await Payment.findByIdAndDelete(id);
+
+    try {
+      if (offlineDb?.payments?.findByIdAndDelete) {
+        offlineDb.payments.findByIdAndDelete(id).catch(() => {});
+      }
+    } catch (e) {}
+
+    invalidateSalesCache();
+
+    await logActivity({
+      req,
+      action: 'DELETE_PAYMENT',
+      module: 'Installments',
+      details: `Mistake payment of Rs. ${amountPaid} deleted for "${sale?.customer?.name || 'Customer'}"`,
+      targetId: payment._id,
+      targetName: sale?.customer?.name || 'Payment'
+    });
+
+    res.json({
+      success: true,
+      message: `Payment of Rs. ${amountPaid.toLocaleString()} deleted and sale balance restored successfully.`,
+      remainingBalance: sale?.remainingBalance
+    });
+  } catch (error) {
+    console.error('Delete Payment Error:', error.message);
+    res.status(500).json({ success: false, message: error.message });
+  }
+};

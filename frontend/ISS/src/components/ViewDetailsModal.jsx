@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { X, User, Package, History, DollarSign, Printer, Send, ExternalLink, Camera, Download, RefreshCw } from 'lucide-react';
+import { X, User, Package, History, DollarSign, Printer, Send, ExternalLink, Camera, Download, RefreshCw, Trash2 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import PaymentReceiptModal from './PaymentReceiptModal';
 import A4ReceiptModal from './A4ReceiptModal';
@@ -8,7 +8,7 @@ import { getFileUrl, getCustomerInitials } from '../utils/fileUtils';
 import { getPromiseMonthsInfo } from '../utils/promiseUtils';
 import PayKistModal from './PayKistModal';
 
-export default function ViewDetailsModal({ selectedSale, onClose, onRefresh, onOpenPayModal }) {
+export default function ViewDetailsModal({ selectedSale, onClose, onRefresh, onOpenPayModal, onDelete }) {
   const [selectedPaymentForReceipt, setSelectedPaymentForReceipt] = useState(null);
   const [showPayModal, setShowPayModal] = useState(false);
   const [showA4Modal, setShowA4Modal] = useState(false);
@@ -468,9 +468,21 @@ export default function ViewDetailsModal({ selectedSale, onClose, onRefresh, onO
 
           {/* Footer Actions */}
           <div className="flex justify-between items-center pt-2 border-t border-slate-800">
-            <button onClick={onClose} className="bg-slate-800 hover:bg-slate-700 text-slate-300 font-medium px-4 py-2 rounded-xl text-xs transition cursor-pointer">
-              Close
-            </button>
+            <div className="flex items-center gap-2">
+              <button onClick={onClose} className="bg-slate-800 hover:bg-slate-700 text-slate-300 font-medium px-4 py-2 rounded-xl text-xs transition cursor-pointer">
+                Close
+              </button>
+              {onDelete && (
+                <button
+                  type="button"
+                  onClick={() => onDelete(selectedSale)}
+                  className="bg-rose-950/40 hover:bg-rose-600 text-rose-400 hover:text-white border border-rose-800/40 px-3 py-2 rounded-xl text-xs font-semibold transition flex items-center gap-1.5 cursor-pointer"
+                  title="غلطی سے بنی انٹری ڈیلیٹ کریں (Delete Mistake Account)"
+                >
+                  <Trash2 className="w-3.5 h-3.5" /> Delete Account
+                </button>
+              )}
+            </div>
 
             {Number(selectedSale.remainingBalance || 0) > 0 && (
               <button 

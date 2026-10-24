@@ -9,7 +9,9 @@ import {
   updateSaleDetails,
   updatePromiseDate,
   uploadSaleDocuments,
-  deleteSaleDocument 
+  deleteSaleDocument,
+  deleteInstallmentSale,
+  deletePayment
 } from '../controllers/installmentController.js';
 import { compressUploads } from '../utils/fileCompressor.js';
 import { uploadMiddleware } from '../services/uploadService.js';
@@ -25,6 +27,11 @@ router.post('/create', upload.any(), compressUploads, createInstallmentSale);
 // Payment routes (Support both '/payment' and '/record-payment')
 router.post('/payment', recordPayment);
 router.post('/record-payment', recordPayment);
+router.delete('/payment/:id', deletePayment);
+router.delete('/payments/:id', deletePayment);
+
+// Delete an installment sale entry (Mistake reversal)
+router.delete('/sales/:id', deleteInstallmentSale);
 
 // Upload & Delete extra documents to existing sale
 router.post('/sales/:id/documents', upload.any(), compressUploads, uploadSaleDocuments);

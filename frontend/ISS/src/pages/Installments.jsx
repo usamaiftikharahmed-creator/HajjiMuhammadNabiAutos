@@ -10,7 +10,8 @@ import {
   Calendar, 
   ChevronLeft, 
   ChevronRight, 
-  X 
+  X,
+  Trash2 
 } from 'lucide-react';
 import ViewDetailsModal from '../components/ViewDetailsModal';
 import PayKistModal from '../components/PayKistModal';
@@ -40,6 +41,33 @@ export default function Installments() {
   const [showPayModal, setShowPayModal] = useState(false);
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [selectedSale, setSelectedSale] = useState(null);
+
+  // Delete Mistake Sale States
+  const [saleToDelete, setSaleToDelete] = useState(null);
+  const [deletingSaleId, setDeletingSaleId] = useState(null);
+
+  const handleConfirmDeleteSale = async () => {
+    if (!saleToDelete) return;
+    setDeletingSaleId(saleToDelete._id);
+    try {
+      const res = await API.delete(`/installments/sales/${saleToDelete._id}`);
+      toast.success(res.data?.message || 'انسٹالمنٹ سیل اکاؤنٹ کامیابی سے ڈیلیٹ ہو گیا');
+      setSales(prev => prev.filter(s => s._id !== saleToDelete._id));
+      if (memoryInstallmentsCache) {
+        memoryInstallmentsCache = memoryInstallmentsCache.filter(s => s._id !== saleToDelete._id);
+      }
+      setSaleToDelete(null);
+      if (selectedSale?._id === saleToDelete._id) {
+        setShowDetailModal(false);
+        setSelectedSale(null);
+      }
+    } catch (err) {
+      console.error('Failed to delete sale:', err);
+      toast.error(err.response?.data?.message || 'ڈیلیٹ کرنے میں خرابی پیش آئی');
+    } finally {
+      setDeletingSaleId(null);
+    }
+  };
 
   // Fetch or Load from In-Memory Cache
   const loadSales = async (forceRefresh = false) => {
@@ -375,12 +403,22 @@ export default function Installments() {
                           </span>
                         </td>
                         <td className="py-3.5 px-4 text-right">
-                          <button
-                            onClick={() => { setSelectedSale(item); setShowDetailModal(true); }}
-                            className="bg-blue-600/10 hover:bg-blue-600/20 text-blue-400 border border-blue-500/30 px-3 py-1.5 rounded-lg text-xs font-semibold transition flex items-center gap-1 ml-auto cursor-pointer"
-                          >
-                            <Eye className="w-3.5 h-3.5" /> View Details
-                          </button>
+                          <div className="flex items-center justify-end gap-1.5">
+                            <button
+                              onClick={() => { setSelectedSale(item); setShowDetailModal(true); }}
+                              className="bg-blue-600/10 hover:bg-blue-600/20 text-blue-400 border border-blue-500/30 px-2.5 py-1.5 rounded-lg text-xs font-semibold transition flex items-center gap-1 cursor-pointer"
+                              title="View Details"
+                            >
+                              <Eye className="w-3.5 h-3.5" /> Details
+                            </button>
+                            <button
+                              onClick={() => setSaleToDelete(item)}
+                              className="bg-rose-500/10 hover:bg-rose-600/20 text-rose-400 hover:text-rose-300 border border-rose-500/30 p-1.5 rounded-lg text-xs font-semibold transition cursor-pointer"
+                              title="غلطی سے بنی انٹری ڈیلیٹ کریں (Delete Mistake Sale)"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     ))
@@ -431,6 +469,10 @@ export default function Installments() {
           selectedSale={selectedSale}
           onClose={() => setShowDetailModal(false)}
           onRefresh={() => loadSales(true)}
+          onDelete={(sale) => {
+            setShowDetailModal(false);
+            setSaleToDelete(sale);
+          }}
           onOpenPayModal={() => {
             setShowDetailModal(false);
             setShowPayModal(true);
@@ -457,6 +499,77 @@ export default function Installments() {
             loadSales(true);
           }}
         />
+      )}
+
+      {/* DELETE CONFIRMATION MODAL */}
+      {saleToDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fade-in">
+          <div className="bg-slate-900 border border-slate-800 w-full max-w-md rounded-3xl shadow-2xl p-6 text-white space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <div className="flex items-center gap-2 text-rose-400">
+                <Trash2 className="w-5 h-5" />
+                <h3 className="font-bold text-base">سیل انٹری ڈیلیٹ کریں (Delete Sale)</h3>
+              </div>
+              <button
+                onClick={() => setSaleToDelete(null)}
+                className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 transition cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="bg-slate-950 border border-slate-800/80 rounded-2xl p-4 space-y-2 text-sm">
+              <div className="flex justify-between text-slate-400">
+                <span>کسٹمر کا نام:</span>
+                <span className="font-bold text-white">{getCustomerField(saleToDelete.customer, 'name')}</span>
+              </div>
+              <div className="flex justify-between text-slate-400">
+                <span>آئٹم کا نام:</span>
+                <span className="font-bold text-white">{saleToDelete.itemName}</span>
+              </div>
+              <div className="flex justify-between text-slate-400">
+                <span>ٹوٹل رقم:</span>
+                <span className="font-mono font-bold text-amber-400">Rs. {saleToDelete.totalAmount?.toLocaleString()}</span>
+              </div>
+              <div className="flex justify-between text-slate-400">
+                <span>بقیہ رقم:</span>
+                <span className="font-mono font-bold text-rose-400">Rs. {saleToDelete.remainingBalance?.toLocaleString()}</span>
+              </div>
+            </div>
+
+            <div className="bg-rose-950/40 border border-rose-900/60 rounded-xl p-3 text-xs text-rose-300">
+              ⚠️ <strong>انتباہ:</strong> کیا آپ واقعی یہ انٹری ڈیلیٹ کرنا چاہتے ہیں؟ اس سیل کا ریکارڈ، تمام فائلز اور اس سے وابستہ تمام اقساط مستقل طور پر ڈیلیٹ ہو جائیں گی۔
+            </div>
+
+            <div className="flex gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => setSaleToDelete(null)}
+                className="flex-1 px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-medium text-xs transition cursor-pointer"
+              >
+                کینسل کریں (Cancel)
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmDeleteSale}
+                disabled={Boolean(deletingSaleId)}
+                className="flex-1 px-4 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-500 disabled:opacity-50 text-white font-bold text-xs transition flex items-center justify-center gap-1.5 cursor-pointer shadow-lg shadow-rose-950"
+              >
+                {deletingSaleId ? (
+                  <>
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                    ڈیلیٹ ہو رہا ہے...
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="w-3.5 h-3.5" />
+                    جی ہاں، ڈیلیٹ کریں
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

@@ -31,6 +31,12 @@ export default function CustomerLedger() {
   const [selectedImageForZoom, setSelectedImageForZoom] = useState(null);
   const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
 
+  // Delete Mistake Entries Modals state
+  const [saleToDelete, setSaleToDelete] = useState(null);
+  const [deletingSaleId, setDeletingSaleId] = useState(null);
+  const [paymentToDelete, setPaymentToDelete] = useState(null);
+  const [deletingPaymentId, setDeletingPaymentId] = useState(null);
+
   // Admin Password Verification Modal state
   const [showPasswordModal, setShowPasswordModal] = useState(false);
   const [adminPasswordInput, setAdminPasswordInput] = useState('');
@@ -546,6 +552,51 @@ export default function CustomerLedger() {
       toast.error(err.response?.data?.message || 'Error deleting document');
     } finally {
       setIsDeletingDocId(null);
+    }
+  };
+
+  const handleConfirmDeleteSale = async () => {
+    if (!saleToDelete?._id) return;
+    try {
+      setDeletingSaleId(saleToDelete._id);
+      const res = await API.delete(`/installments/sales/${saleToDelete._id}`);
+      if (res.data?.success) {
+        toast.success(res.data.message || 'Installment sale delete ho chuki hai.');
+        const remainingSales = (ledgerData?.installmentSales || []).filter(s => s._id !== saleToDelete._id);
+        setSaleToDelete(null);
+        if (remainingSales.length > 0) {
+          await handleSearch(null, ledgerData?.customer?.customerId || ledgerData?.customer?.phone || searchQuery);
+        } else {
+          setLedgerData(null);
+        }
+      } else {
+        toast.error(res.data?.message || 'Delete karne mein masla pesh aya');
+      }
+    } catch (err) {
+      console.error('Delete sale error:', err);
+      toast.error(err.response?.data?.message || 'Server error while deleting sale');
+    } finally {
+      setDeletingSaleId(null);
+    }
+  };
+
+  const handleConfirmDeletePayment = async () => {
+    if (!paymentToDelete?._id) return;
+    try {
+      setDeletingPaymentId(paymentToDelete._id);
+      const res = await API.delete(`/installments/payment/${paymentToDelete._id}`);
+      if (res.data?.success) {
+        toast.success(res.data.message || 'Payment entry delete ho chuki hai.');
+        setPaymentToDelete(null);
+        await handleSearch(null, ledgerData?.customer?.customerId || ledgerData?.customer?.phone || searchQuery);
+      } else {
+        toast.error(res.data?.message || 'Payment delete karne mein masla aya');
+      }
+    } catch (err) {
+      console.error('Delete payment error:', err);
+      toast.error(err.response?.data?.message || 'Server error while deleting payment');
+    } finally {
+      setDeletingPaymentId(null);
     }
   };
 
@@ -1088,6 +1139,15 @@ export default function CustomerLedger() {
                           >
                             <Printer className="w-3 h-3" /> Print
                           </button>
+
+                          {/* Delete Mistake Sale Button */}
+                          <button
+                            onClick={() => setSaleToDelete({ ...sale, customer: ledgerData.customer })}
+                            className="bg-red-500/10 hover:bg-red-600 text-red-400 hover:text-white px-2 py-1 rounded-lg text-[10px] font-semibold border border-red-500/20 transition flex items-center gap-1 cursor-pointer"
+                            title="Delete this mistake sale"
+                          >
+                            <Trash2 className="w-3 h-3" /> Delete
+                          </button>
                         </div>
                       </div>
                     </div>
@@ -1264,7 +1324,7 @@ export default function CustomerLedger() {
                       <th className="p-3">Amount Paid</th>
                       <th className="p-3">Received By</th>
                       <th className="p-3">Notes</th>
-                      <th className="p-3 text-right print:hidden">Receipt</th>
+                      <th className="p-3 text-right print:hidden">Actions</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-800 text-slate-300 print:divide-gray-300 print:text-black">
@@ -1290,16 +1350,25 @@ export default function CustomerLedger() {
                           <td className="p-3 text-slate-400">{payment.receivedBy?.name || 'Staff'}</td>
                           <td className="p-3 text-slate-400 italic">{payment.notes || '-'}</td>
                           <td className="p-3 text-right print:hidden">
-                            <button
-                              onClick={() => {
-                                const matchedSale = ledgerData.installmentSales.find(s => s._id === (payment.installmentSale?._id || payment.installmentSale)) || ledgerData.installmentSales[0];
-                                setSelectedPayment(payment);
-                                setSelectedSaleForReceipt({ ...matchedSale, customer: ledgerData.customer });
-                              }}
-                              className="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg text-[11px] font-semibold border border-slate-700 transition cursor-pointer"
-                            >
-                              Receipt
-                            </button>
+                            <div className="flex items-center justify-end gap-1.5">
+                              <button
+                                onClick={() => {
+                                  const matchedSale = ledgerData.installmentSales.find(s => s._id === (payment.installmentSale?._id || payment.installmentSale)) || ledgerData.installmentSales[0];
+                                  setSelectedPayment(payment);
+                                  setSelectedSaleForReceipt({ ...matchedSale, customer: ledgerData.customer });
+                                }}
+                                className="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg text-[11px] font-semibold border border-slate-700 transition cursor-pointer"
+                              >
+                                Receipt
+                              </button>
+                              <button
+                                onClick={() => setPaymentToDelete(payment)}
+                                className="p-1.5 bg-red-500/10 hover:bg-red-600 text-red-400 hover:text-white rounded-lg text-[11px] font-semibold border border-red-500/20 transition cursor-pointer"
+                                title="Delete Mistake Payment Entry"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
                           </td>
                         </tr>
                       );
@@ -2314,6 +2383,176 @@ export default function CustomerLedger() {
                   <ExternalLink className="w-3.5 h-3.5" /> Full Size Link
                 </a>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* DELETE SALE CONFIRMATION MODAL */}
+      {saleToDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fade-in">
+          <div className="bg-slate-900 border border-red-500/30 w-full max-w-md rounded-3xl shadow-2xl p-6 text-white space-y-4">
+            <div className="flex items-start justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 rounded-2xl bg-red-500/10 text-red-400 flex items-center justify-center border border-red-500/20 shrink-0">
+                  <Trash2 className="w-6 h-6" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-white">Delete Installment Sale?</h3>
+                  <p className="text-xs text-red-300/80">Ghalti se hui entry ko delete karein</p>
+                </div>
+              </div>
+              <button 
+                onClick={() => !deletingSaleId && setSaleToDelete(null)}
+                className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 transition cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="bg-slate-950/70 border border-slate-800/80 rounded-2xl p-3.5 space-y-2 text-xs">
+              <div className="flex justify-between">
+                <span className="text-slate-400">Customer:</span>
+                <span className="font-semibold text-slate-200">{saleToDelete.customer?.name || ledgerData?.customer?.name} ({saleToDelete.customer?.customerId || ledgerData?.customer?.customerId})</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-400">Item:</span>
+                <span className="font-semibold text-white">{saleToDelete.itemName}</span>
+              </div>
+              {(saleToDelete.registrationNumber || saleToDelete.itemRegNumber) && (
+                <div className="flex justify-between">
+                  <span className="text-slate-400">Reg #:</span>
+                  <span className="font-mono text-cyan-300">{saleToDelete.registrationNumber || saleToDelete.itemRegNumber}</span>
+                </div>
+              )}
+              <div className="flex justify-between">
+                <span className="text-slate-400">Remaining Balance:</span>
+                <span className="font-bold text-amber-400">Rs. {Number(saleToDelete.remainingBalance || 0).toLocaleString()}</span>
+              </div>
+            </div>
+
+            <div className="p-3 bg-red-950/30 border border-red-900/40 rounded-xl text-[11px] text-red-300 space-y-1">
+              <p className="font-semibold flex items-center gap-1.5">
+                <AlertCircle className="w-3.5 h-3.5 text-red-400 shrink-0" />
+                ⚠️ Khabardaar / Warning:
+              </p>
+              <p className="leading-relaxed">
+                Yeh installment sale mukammal taur par delete ho jayegi. Iske sath linked tamam payments aur Google Drive se documents bhi remove ho jayenge. Agar is customer ka koi aur item nahi hai toh customer profile bhi clean ho jayegi.
+              </p>
+            </div>
+
+            <div className="flex items-center justify-end gap-2.5 pt-2">
+              <button
+                type="button"
+                onClick={() => setSaleToDelete(null)}
+                disabled={Boolean(deletingSaleId)}
+                className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-semibold transition cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmDeleteSale}
+                disabled={Boolean(deletingSaleId)}
+                className="px-4 py-2 bg-red-600 hover:bg-red-500 text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-lg shadow-red-950 cursor-pointer disabled:opacity-50"
+              >
+                {deletingSaleId ? (
+                  <>
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin" /> Deleting...
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="w-3.5 h-3.5" /> Haan, Sale Delete Karein
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* DELETE PAYMENT CONFIRMATION MODAL */}
+      {paymentToDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fade-in">
+          <div className="bg-slate-900 border border-red-500/30 w-full max-w-md rounded-3xl shadow-2xl p-6 text-white space-y-4">
+            <div className="flex items-start justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 rounded-2xl bg-red-500/10 text-red-400 flex items-center justify-center border border-red-500/20 shrink-0">
+                  <Trash2 className="w-6 h-6" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-white">Delete Payment Entry?</h3>
+                  <p className="text-xs text-red-300/80">Ghalti se darj hui wasooli / kist delete karein</p>
+                </div>
+              </div>
+              <button 
+                onClick={() => !deletingPaymentId && setPaymentToDelete(null)}
+                className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 transition cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="bg-slate-950/70 border border-slate-800/80 rounded-2xl p-3.5 space-y-2 text-xs">
+              <div className="flex justify-between">
+                <span className="text-slate-400">Amount Paid:</span>
+                <span className="font-black text-emerald-400 text-sm">Rs. {Number(paymentToDelete.amountPaid || 0).toLocaleString()}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-400">Payment For:</span>
+                <span className="font-semibold text-purple-300">{paymentToDelete.forMonth || 'Monthly Installment'}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-400">Method:</span>
+                <span className="uppercase text-slate-200">{paymentToDelete.paymentMethod || 'Cash'}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-400">Date:</span>
+                <span className="text-slate-300">{new Date(paymentToDelete.createdAt).toLocaleDateString('en-PK', { day: '2-digit', month: 'short', year: 'numeric' })}</span>
+              </div>
+              {paymentToDelete.notes && (
+                <div className="flex justify-between">
+                  <span className="text-slate-400">Notes:</span>
+                  <span className="italic text-slate-300">{paymentToDelete.notes}</span>
+                </div>
+              )}
+            </div>
+
+            <div className="p-3 bg-red-950/30 border border-red-900/40 rounded-xl text-[11px] text-red-300 space-y-1">
+              <p className="font-semibold flex items-center gap-1.5">
+                <AlertCircle className="w-3.5 h-3.5 text-red-400 shrink-0" />
+                ⚠️ Note:
+              </p>
+              <p className="leading-relaxed">
+                Yeh payment entry delete ho jayegi aur installment account ka total recovered amount kam ho kar remaining balance wapas barh jayega.
+              </p>
+            </div>
+
+            <div className="flex items-center justify-end gap-2.5 pt-2">
+              <button
+                type="button"
+                onClick={() => setPaymentToDelete(null)}
+                disabled={Boolean(deletingPaymentId)}
+                className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-semibold transition cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmDeletePayment}
+                disabled={Boolean(deletingPaymentId)}
+                className="px-4 py-2 bg-red-600 hover:bg-red-500 text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-lg shadow-red-950 cursor-pointer disabled:opacity-50"
+              >
+                {deletingPaymentId ? (
+                  <>
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin" /> Deleting...
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="w-3.5 h-3.5" /> Haan, Payment Delete Karein
+                  </>
+                )}
+              </button>
             </div>
           </div>
         </div>
