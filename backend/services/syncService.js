@@ -1,7 +1,7 @@
 import mongoose from 'mongoose';
 import fs from 'fs';
 import path from 'path';
-import { cache, saveCollection, loadAllData, updateSummary } from './offlineDb.js';
+import { cache, saveCollection, loadAllData, updateSummary, isDeleted, recordDeletion } from './offlineDb.js';
 import { MAIN_UPLOADS_DIR, GDRIVE_UPLOADS_DIR } from './uploadService.js';
 
 let isSyncing = false;
@@ -26,10 +26,44 @@ export const syncOfflineDataToAtlas = async () => {
     const db = mongoose.connection.db;
     let totalSyncedToCloud = 0;
     let totalFetchedFromCloud = 0;
+    let totalDeletionsPropagated = 0;
 
+    // 0. FIRST: Propagate all recorded deletions to Cloud Atlas
+    const deletedList = cache.deletedRecords || [];
+    if (deletedList.length > 0) {
+      for (const [cacheKey, mongoColName] of Object.entries(colMapping)) {
+        const deletedForCol = deletedList.filter(d => d.col === cacheKey).map(d => String(d.id));
+        if (deletedForCol.length > 0) {
+          const col = db.collection(mongoColName);
+          const objIds = deletedForCol
+            .filter(id => mongoose.Types.ObjectId.isValid(id))
+            .map(id => new mongoose.Types.ObjectId(id));
+
+          const delRes = await col.deleteMany({
+            $or: [
+              { _id: { $in: deletedForCol } },
+              { _id: { $in: objIds } }
+            ]
+          });
+          totalDeletionsPropagated += (delRes.deletedCount || 0);
+
+          // Purge from local cache if still lingering
+          if (cache[cacheKey] && cache[cacheKey].length > 0) {
+            const before = cache[cacheKey].length;
+            cache[cacheKey] = cache[cacheKey].filter(doc => !deletedForCol.includes(String(doc._id)));
+            if (cache[cacheKey].length !== before) {
+              saveCollection(cacheKey);
+            }
+          }
+        }
+      }
+    }
+
+    // 1. Process each collection for push & pull
     for (const [cacheKey, mongoColName] of Object.entries(colMapping)) {
-      const localDocs = cache[cacheKey] || [];
       const col = db.collection(mongoColName);
+      // Filter out any locally deleted docs
+      let localDocs = (cache[cacheKey] || []).filter(doc => !isDeleted(cacheKey, doc._id));
 
       // 1. Push local docs to Atlas
       if (localDocs.length > 0) {
@@ -39,12 +73,17 @@ export const syncOfflineDataToAtlas = async () => {
           delete plain.comparePassword;
           delete plain.id;
           
+          const objId = mongoose.Types.ObjectId.isValid(doc._id) ? new mongoose.Types.ObjectId(doc._id) : doc._id;
+          delete plain._id;
+
           if (cacheKey === 'users') {
-            delete plain._id;
             return {
               updateOne: {
                 filter: { username: doc.username },
-                update: { $set: plain },
+                update: { 
+                  $set: plain,
+                  $setOnInsert: { _id: objId }
+                },
                 upsert: true
               }
             };
@@ -52,8 +91,11 @@ export const syncOfflineDataToAtlas = async () => {
 
           return {
             updateOne: {
-              filter: { _id: doc._id },
-              update: { $set: plain },
+              filter: { _id: objId },
+              update: { 
+                $set: plain,
+                $setOnInsert: { _id: objId }
+              },
               upsert: true
             }
           };
@@ -62,30 +104,52 @@ export const syncOfflineDataToAtlas = async () => {
         totalSyncedToCloud += (result.upsertedCount || 0) + (result.modifiedCount || 0);
       }
 
-      // 2. Pull any missing remote docs from Atlas to local
+      // 2. Pull missing remote docs from Atlas to local (checking timestamps & tombstones)
       const remoteDocs = await col.find().toArray();
       let localModified = false;
       for (const rDoc of remoteDocs) {
         const rId = String(rDoc._id);
-        const existsLocally = localDocs.some(l => String(l._id) === rId);
-        if (!existsLocally) {
+
+        // CRITICAL FIX: If this document was marked deleted, NEVER pull it back into local!
+        // Instead, ensure it is deleted from Atlas too!
+        if (isDeleted(cacheKey, rId)) {
+          const objId = mongoose.Types.ObjectId.isValid(rId) ? new mongoose.Types.ObjectId(rId) : rId;
+          await col.deleteOne({ $or: [{ _id: objId }, { _id: rId }] });
+          continue;
+        }
+
+        const localIdx = localDocs.findIndex(l => String(l._id) === rId);
+        if (localIdx === -1) {
+          // Genuinely new record from cloud
           localDocs.push(rDoc);
           localModified = true;
           totalFetchedFromCloud++;
+        } else {
+          // Document exists in both: check if cloud version has newer timestamp
+          const localDoc = localDocs[localIdx];
+          const localTime = new Date(localDoc.updatedAt || localDoc.createdAt || 0).getTime();
+          const remoteTime = new Date(rDoc.updatedAt || rDoc.createdAt || 0).getTime();
+          if (remoteTime > localTime) {
+            localDocs[localIdx] = { ...rDoc };
+            localModified = true;
+          }
         }
       }
 
       if (localModified) {
+        cache[cacheKey] = localDocs;
         saveCollection(cacheKey);
       }
     }
 
-    if (totalSyncedToCloud > 0 || totalFetchedFromCloud > 0) {
-      console.log(`☁️ Cloud Auto-Sync Complete: ${totalSyncedToCloud} updated on Atlas, ${totalFetchedFromCloud} fetched locally.`);
+    if (totalSyncedToCloud > 0 || totalFetchedFromCloud > 0 || totalDeletionsPropagated > 0) {
+      console.log(`☁️ Cloud Auto-Sync Complete: ${totalSyncedToCloud} pushed, ${totalFetchedFromCloud} fetched, ${totalDeletionsPropagated} deleted on Atlas.`);
     }
 
-    // Auto-sync uploaded customer photos to Google Drive
-    await syncUploadsToGoogleDrive();
+    // Auto-sync uploaded customer photos to Google Drive asynchronously
+    setTimeout(() => {
+      syncUploadsToGoogleDrive().catch(() => {});
+    }, 50);
 
     updateSummary();
   } catch (err) {

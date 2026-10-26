@@ -1,5 +1,5 @@
 import mongoose from 'mongoose';
-import { offlineDb, wrapDoc, generateId } from '../services/offlineDb.js';
+import { offlineDb, wrapDoc, generateId, recordDeletion } from '../services/offlineDb.js';
 
 export const createHybridModel = (MongooseModel, colName) => {
   // On Vercel / Cloud serverless, ALWAYS use MongooseModel directly against MongoDB Atlas
@@ -174,6 +174,10 @@ export const createHybridModel = (MongooseModel, colName) => {
       // Intercept deleteOne & findByIdAndDelete
       if (prop === 'deleteOne' || prop === 'findByIdAndDelete') {
         return async function (...args) {
+          const targetId = args[0]?._id || args[0];
+          if (targetId) {
+            recordDeletion(colName, targetId);
+          }
           if (getIsOnline()) {
             try {
               const res = await target[prop](...args);

@@ -1,6 +1,7 @@
 import User from '../models/User.js';
 import jwt from 'jsonwebtoken';
 import { logActivity } from '../utils/logger.js';
+import { recordDeletion, offlineDb } from '../services/offlineDb.js';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'hajji_mohammad_nabi_autos_secret_key_2026_secure';
 
@@ -149,7 +150,13 @@ export const deleteUser = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Cannot delete your own account' });
     }
 
+    recordDeletion('users', req.params.id);
     await User.findByIdAndDelete(req.params.id);
+    try {
+      if (offlineDb?.users?.findByIdAndDelete) {
+        await offlineDb.users.findByIdAndDelete(req.params.id);
+      }
+    } catch (e) {}
 
     await logActivity({
       req,

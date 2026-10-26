@@ -13,6 +13,7 @@ import User from '../models/User.js';
 import ActivityLog from '../models/ActivityLog.js';
 import BackupSettings from '../models/BackupSettings.js';
 import { logActivity } from '../utils/logger.js';
+import { cache } from './offlineDb.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -175,6 +176,7 @@ export const getBackupSettings = async () => {
 
 // 2. EXPORT LIVE JSON DATA (Zero Database Dependency Mirror)
 export const exportLiveJsonData = async () => {
+  if (process.env.VERCEL) return { success: true, message: 'Live JSON disk mirror skipped on Vercel serverless.' };
   try {
     ensureBackupDirs();
     const settings = await getBackupSettings();
@@ -199,6 +201,15 @@ export const exportLiveJsonData = async () => {
 
     for (const f of filesToSave) {
       fs.writeFileSync(path.join(DATA_DIR, f.name), JSON.stringify(f.data, null, 2), 'utf-8');
+    }
+
+    // Keep in-memory cache synchronized with live exported data
+    if (cache) {
+      cache.customers = customers;
+      cache.installmentSales = installmentSales;
+      cache.payments = payments;
+      cache.expenses = expenses;
+      cache.dailyClosings = dailyClosings;
     }
 
     const summary = {

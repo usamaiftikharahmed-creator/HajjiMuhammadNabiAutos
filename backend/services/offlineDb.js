@@ -51,7 +51,8 @@ export const cache = {
   expenses: [],
   dailyClosings: [],
   activityLogs: [],
-  backupSettings: []
+  backupSettings: [],
+  deletedRecords: []
 };
 
 // Collection mapping to filenames
@@ -63,7 +64,8 @@ const collectionFiles = {
   expenses: 'expenses.json',
   dailyClosings: 'dailyClosings.json',
   activityLogs: 'activityLogs.json',
-  backupSettings: 'backupSettings.json'
+  backupSettings: 'backupSettings.json',
+  deletedRecords: 'deletedRecords.json'
 };
 
 // Google Drive Sync detection
@@ -145,6 +147,33 @@ export const saveCollection = (colName) => {
     updateSummary();
   } catch (err) {
     console.error(`❌ Failed to save collection ${colName}:`, err.message);
+  }
+};
+
+// Tombstone Deletion Tracker (Ensures deleted records are NEVER resurrected by cloud/local sync)
+export const recordDeletion = (colName, id) => {
+  if (!id) return;
+  const idStr = String(id?._id || id);
+  if (!cache.deletedRecords) cache.deletedRecords = [];
+  if (!cache.deletedRecords.some(d => d.id === idStr && d.col === colName)) {
+    cache.deletedRecords.push({ col: colName, id: idStr, at: new Date().toISOString() });
+    saveCollection('deletedRecords');
+  }
+};
+
+export const isDeleted = (colName, id) => {
+  if (!id || !cache.deletedRecords) return false;
+  const idStr = String(id?._id || id);
+  return cache.deletedRecords.some(d => d.id === idStr && d.col === colName);
+};
+
+export const clearDeletedRecord = (colName, id) => {
+  if (!id || !cache.deletedRecords) return;
+  const idStr = String(id?._id || id);
+  const idx = cache.deletedRecords.findIndex(d => d.id === idStr && d.col === colName);
+  if (idx !== -1) {
+    cache.deletedRecords.splice(idx, 1);
+    saveCollection('deletedRecords');
   }
 };
 
@@ -421,6 +450,10 @@ export class OfflineCollection {
         doc.password = await bcrypt.hash(doc.password, 10);
       }
 
+      if (doc._id) {
+        clearDeletedRecord(this.name, doc._id);
+      }
+
       this.items.push(doc);
       created.push(wrapDoc(doc, this.name));
     }
@@ -505,7 +538,10 @@ export class OfflineCollection {
   async deleteOne(filter) {
     const idx = this.items.findIndex(d => matchFilter(d, filter));
     if (idx !== -1) {
-      this.items.splice(idx, 1);
+      const removed = this.items.splice(idx, 1)[0];
+      if (removed?._id) {
+        recordDeletion(this.name, removed._id);
+      }
       saveCollection(this.name);
       return { deletedCount: 1 };
     }
@@ -514,9 +550,13 @@ export class OfflineCollection {
 
   async deleteMany(filter = {}) {
     const initialLen = this.items.length;
+    const toRemove = this.items.filter(d => matchFilter(d, filter));
     const remaining = this.items.filter(d => !matchFilter(d, filter));
     const deletedCount = initialLen - remaining.length;
     if (deletedCount > 0) {
+      for (const item of toRemove) {
+        if (item?._id) recordDeletion(this.name, item._id);
+      }
       this.items.length = 0;
       this.items.push(...remaining);
       saveCollection(this.name);
@@ -564,5 +604,6 @@ export const offlineDb = {
   expenses: new OfflineCollection('expenses'),
   dailyClosings: new OfflineCollection('dailyClosings'),
   activityLogs: new OfflineCollection('activityLogs'),
-  backupSettings: new OfflineCollection('backupSettings')
+  backupSettings: new OfflineCollection('backupSettings'),
+  deletedRecords: new OfflineCollection('deletedRecords')
 };

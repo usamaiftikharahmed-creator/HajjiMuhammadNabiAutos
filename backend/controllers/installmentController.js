@@ -9,12 +9,12 @@ import jwt from 'jsonwebtoken';
 import { logActivity } from '../utils/logger.js';
 import { invalidateDashboardCache } from '../routes/dashboardRoutes.js';
 import { triggerDebouncedLiveJsonSync } from '../services/backupService.js';
-import { offlineDb } from '../services/offlineDb.js';
+import { offlineDb, recordDeletion } from '../services/offlineDb.js';
 import { mirrorUploadedFile, getUploadDirs } from '../services/uploadService.js';
 import { deleteFromGoogleDrive, uploadToGoogleDrive, listCustomerDriveFiles } from '../services/googleDriveService.js';
 
 // Process-wide Singleton RAM cache for sub-millisecond page loads (<1ms)
-const SALES_CACHE_TTL_MS = 60000; // 60 seconds TTL
+const SALES_CACHE_TTL_MS = 2000; // 2 seconds TTL (prevents stale data across page refreshes)
 
 export const invalidateSalesCache = () => {
   global.iss_cachedSales = null;
@@ -515,7 +515,7 @@ export const prewarmSalesCache = async () => {
 export const getInstallmentSales = async (req, res) => {
   try {
     const now = Date.now();
-    if (global.iss_cachedSales && (now - (global.iss_lastSalesFetchTime || 0)) < SALES_CACHE_TTL_MS) {
+    if (!req.query.refresh && !process.env.VERCEL && global.iss_cachedSales && (now - (global.iss_lastSalesFetchTime || 0)) < SALES_CACHE_TTL_MS) {
       return res.json({ success: true, sales: global.iss_cachedSales, fromCache: true });
     }
 
@@ -618,9 +618,11 @@ export const getCustomerLedger = async (req, res) => {
             path.basename(primarySale.guarantor2CnicBack || ''),
           ].filter(Boolean));
 
+          const deletedDocsSet = new Set(primarySale.deletedDocs || []);
+
           for (const df of driveFiles) {
             const fileName = path.basename(df.name);
-            if (knownFiles.has(fileName)) continue;
+            if (knownFiles.has(fileName) || deletedDocsSet.has(fileName) || deletedDocsSet.has(df.driveFileId)) continue;
 
             const exists = primarySale.documents.some(d => 
               (d.fileUrl && path.basename(d.fileUrl) === fileName) ||
@@ -714,6 +716,14 @@ export const updateCustomer = async (req, res) => {
     if (!updatedCustomer) {
       return res.status(404).json({ success: false, message: 'Customer not found' });
     }
+
+    // Mirror immediately to offlineDb JSON
+    try {
+      if (offlineDb?.customers?.findByIdAndUpdate) {
+        const plainCust = JSON.parse(JSON.stringify(updatedCustomer));
+        await offlineDb.customers.findByIdAndUpdate(id, plainCust);
+      }
+    } catch (e) {}
 
     if (profilePic) {
       await InstallmentSale.updateMany({ customer: id }, { $set: { profilePic } });
@@ -875,6 +885,14 @@ export const updateSaleDetails = async (req, res) => {
     }
 
     await sale.save();
+
+    // Mirror immediately to offlineDb JSON so background sync never overwrites with old data
+    try {
+      if (offlineDb?.installmentSales?.findByIdAndUpdate) {
+        const plainSale = JSON.parse(JSON.stringify(sale));
+        await offlineDb.installmentSales.findByIdAndUpdate(sale._id, plainSale);
+      }
+    } catch (e) {}
 
     await logActivity({
       req,
@@ -1058,10 +1076,16 @@ export const deleteSaleDocument = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Installment account not found' });
     }
 
+    if (!sale.deletedDocs) sale.deletedDocs = [];
+    if (docToDelete?.fileUrl) sale.deletedDocs.push(path.basename(docToDelete.fileUrl));
+    if (docToDelete?.driveFileId) sale.deletedDocs.push(docToDelete.driveFileId);
+    sale.markModified('deletedDocs');
+    try { await sale.save(); } catch (e) {}
+
     // Mirror to offlineDb JSON
     try {
       if (offlineDb?.installmentSales?.findByIdAndUpdate) {
-        offlineDb.installmentSales.findByIdAndUpdate(id, { $set: { documents: updatedSale.documents } }).catch(() => {});
+        offlineDb.installmentSales.findByIdAndUpdate(id, { $set: { documents: updatedSale.documents, deletedDocs: sale.deletedDocs } }).catch(() => {});
       }
     } catch (e) {}
 
@@ -1142,6 +1166,14 @@ export const updatePromiseDate = async (req, res) => {
     await sale.save();
     await sale.populate('customer');
 
+    // Mirror to offlineDb JSON
+    try {
+      if (offlineDb?.installmentSales?.findByIdAndUpdate) {
+        const plainSale = JSON.parse(JSON.stringify(sale));
+        await offlineDb.installmentSales.findByIdAndUpdate(sale._id, plainSale);
+      }
+    } catch (e) {}
+
     await logActivity({
       req,
       action: 'UPDATE_PROMISE_DATE',
@@ -1174,12 +1206,74 @@ export const deleteInstallmentSale = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Installment sale not found' });
     }
 
+    // 0. Record deletion tombstone immediately
+    recordDeletion('installmentSales', id);
+
     const customerObj = sale.customer;
     const customerId = customerObj?._id || sale.customer;
     const customerName = customerObj?.name || 'Customer';
     const itemName = sale.itemName || 'Item';
 
-    // 1. Delete associated documents and photos from Google Drive & local disk
+    // 1. Delete the installment sale itself from MongoDB Atlas FIRST (instant, sub-millisecond)
+    const saleObjId = mongoose.Types.ObjectId.isValid(id) ? new mongoose.Types.ObjectId(id) : id;
+    await InstallmentSale.deleteOne({ $or: [{ _id: saleObjId }, { _id: String(id) }] });
+
+    // 2. Delete all payments associated with this mistake sale and record tombstones
+    const linkedPayments = await Payment.find({
+      $or: [
+        { installmentSale: sale._id },
+        { sale: sale._id },
+        { installmentSale: id },
+        { sale: id }
+      ]
+    });
+    for (const p of linkedPayments) {
+      recordDeletion('payments', p._id);
+    }
+
+    await Payment.deleteMany({
+      $or: [
+        { installmentSale: sale._id },
+        { sale: sale._id },
+        { installmentSale: id },
+        { sale: id }
+      ]
+    });
+
+    // 3. Mirror deletion to offlineDb JSON immediately
+    try {
+      if (offlineDb?.installmentSales?.findByIdAndDelete) {
+        await offlineDb.installmentSales.findByIdAndDelete(id);
+      }
+      if (offlineDb?.payments?.deleteMany) {
+        await offlineDb.payments.deleteMany({
+          $or: [
+            { installmentSale: id },
+            { sale: id }
+          ]
+        });
+      }
+    } catch (e) {}
+
+    // 4. If this customer has no other sales, remove empty customer profile
+    if (customerId) {
+      const remainingSales = await InstallmentSale.countDocuments({ customer: customerId });
+      if (remainingSales === 0) {
+        recordDeletion('customers', customerId);
+        const custObjId = mongoose.Types.ObjectId.isValid(customerId) ? new mongoose.Types.ObjectId(customerId) : customerId;
+        await Customer.deleteOne({ $or: [{ _id: custObjId }, { _id: String(customerId) }] });
+        try {
+          if (offlineDb?.customers?.findByIdAndDelete) {
+            await offlineDb.customers.findByIdAndDelete(customerId);
+          }
+        } catch (e) {}
+      }
+    }
+
+    // 5. Invalidate caches immediately
+    invalidateSalesCache();
+
+    // 6. Delete associated documents from Google Drive asynchronously (non-blocking)
     const filesToDelete = [];
     if (sale.documents && Array.isArray(sale.documents)) {
       for (const doc of sale.documents) {
@@ -1191,59 +1285,19 @@ export const deleteInstallmentSale = async (req, res) => {
       if (sale[k]) filesToDelete.push(path.basename(sale[k]));
     });
 
-    for (const f of filesToDelete) {
-      try {
-        await deleteFromGoogleDrive(f);
-      } catch (err) {}
-      getUploadDirs().forEach(dir => {
+    setTimeout(async () => {
+      for (const f of filesToDelete) {
         try {
-          const p = path.join(dir, f);
-          if (fs.existsSync(p)) fs.unlinkSync(p);
-        } catch (e) {}
-      });
-    }
-
-    // 2. Delete all payments associated with this mistake sale
-    await Payment.deleteMany({
-      $or: [
-        { installmentSale: sale._id },
-        { sale: sale._id }
-      ]
-    });
-
-    // 3. Delete the installment sale itself
-    await InstallmentSale.findByIdAndDelete(id);
-
-    // 4. Mirror deletion to offlineDb JSON
-    try {
-      if (offlineDb?.installmentSales?.findByIdAndDelete) {
-        offlineDb.installmentSales.findByIdAndDelete(id).catch(() => {});
+          await deleteFromGoogleDrive(f);
+        } catch (err) {}
+        getUploadDirs().forEach(dir => {
+          try {
+            const p = path.join(dir, f);
+            if (fs.existsSync(p)) fs.unlinkSync(p);
+          } catch (e) {}
+        });
       }
-      if (offlineDb?.payments?.deleteMany) {
-        offlineDb.payments.deleteMany({
-          $or: [
-            { installmentSale: id },
-            { sale: id }
-          ]
-        }).catch(() => {});
-      }
-    } catch (e) {}
-
-    // 5. If this customer has no other sales, remove empty customer profile
-    if (customerId) {
-      const remainingSales = await InstallmentSale.countDocuments({ customer: customerId });
-      if (remainingSales === 0) {
-        await Customer.findByIdAndDelete(customerId);
-        try {
-          if (offlineDb?.customers?.findByIdAndDelete) {
-            offlineDb.customers.findByIdAndDelete(customerId).catch(() => {});
-          }
-        } catch (e) {}
-      }
-    }
-
-    // 6. Invalidate caches
-    invalidateSalesCache();
+    }, 50);
 
     // 7. Audit log
     await logActivity({
@@ -1275,6 +1329,8 @@ export const deletePayment = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Payment entry not found' });
     }
 
+    recordDeletion('payments', id);
+
     const saleId = payment.installmentSale || payment.sale;
     const amountPaid = Number(payment.amountPaid || payment.amount || 0);
 
@@ -1294,24 +1350,25 @@ export const deletePayment = async (req, res) => {
 
         try {
           if (offlineDb?.installmentSales?.findByIdAndUpdate) {
-            offlineDb.installmentSales.findByIdAndUpdate(saleId, {
+            await offlineDb.installmentSales.findByIdAndUpdate(saleId, {
               $set: {
                 totalRecoveredAmount: newRecovered,
                 remainingBalance: newBalance,
                 status: newStatus
               }
-            }).catch(() => {});
+            });
           }
         } catch (e) {}
       }
     }
 
-    // Delete payment record
-    await Payment.findByIdAndDelete(id);
+    // Delete payment record from MongoDB Atlas
+    const payObjId = mongoose.Types.ObjectId.isValid(id) ? new mongoose.Types.ObjectId(id) : id;
+    await Payment.deleteOne({ $or: [{ _id: payObjId }, { _id: String(id) }] });
 
     try {
       if (offlineDb?.payments?.findByIdAndDelete) {
-        offlineDb.payments.findByIdAndDelete(id).catch(() => {});
+        await offlineDb.payments.findByIdAndDelete(id);
       }
     } catch (e) {}
 

@@ -442,7 +442,9 @@ if (!process.env.VERCEL) {
 // 4. Connect to MongoDB Atlas
 connectDB().catch(() => {});
 
-// 5. Start Background Auto-Reconnect and Cloud Sync (checks every 20s)
-startBackgroundSyncMonitor(process.env.MONGO_URI);
+// 5. Start Background Auto-Reconnect and Cloud Sync (checks every 20s, local only)
+if (!process.env.VERCEL) {
+  startBackgroundSyncMonitor(process.env.MONGO_URI);
+}
 
 export default app;

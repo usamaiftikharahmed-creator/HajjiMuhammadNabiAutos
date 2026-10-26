@@ -1,9 +1,11 @@
 import express from 'express';
+import mongoose from 'mongoose';
 import Expense from '../models/Expense.js';
 import Payment from '../models/Payment.js';
 import DailyClosing from '../models/DailyClosing.js';
 import { protect } from '../middleware/authMiddleware.js';
 import { logActivity } from '../utils/logger.js';
+import { offlineDb, recordDeletion } from '../services/offlineDb.js';
 
 const router = express.Router();
 
@@ -302,15 +304,21 @@ router.post('/expense', protect, async (req, res) => {
 // 3. DELETE Expense
 router.delete('/expense/:id', protect, async (req, res) => {
   try {
-    const expToDelete = await Expense.findById(req.params.id);
-    await Expense.findByIdAndDelete(req.params.id);
+    const id = req.params.id;
+    recordDeletion('expenses', id);
+    const expToDelete = await Expense.findById(id);
+    const objId = mongoose.Types.ObjectId.isValid(id) ? new mongoose.Types.ObjectId(id) : id;
+    await Expense.deleteOne({ $or: [{ _id: objId }, { _id: String(id) }] });
+    if (offlineDb?.expenses?.findByIdAndDelete) {
+      await offlineDb.expenses.findByIdAndDelete(id);
+    }
 
     await logActivity({
       req,
       action: 'DELETE_EXPENSE',
       module: 'Expenses',
       details: `Shop Kharcha Delete Kiya Gaya: "${expToDelete?.title || 'Unknown'}" (Rs. ${expToDelete?.amount || 0})`,
-      targetId: req.params.id,
+      targetId: id,
       targetName: expToDelete?.title || ''
     });
 
