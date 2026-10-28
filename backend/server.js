@@ -19,7 +19,7 @@ if (fs.existsSync(path.resolve(__dirname, '.env'))) {
 
 // Fallback defaults to ensure 100% offline functionality without missing config crashes
 process.env.JWT_SECRET = process.env.JWT_SECRET || 'super_secret_secure_key_10_out_of_10';
-process.env.MONGO_URI = process.env.MONGO_URI || 'mongodb+srv://usamaiftikharahmed:Chlorobenzene@cluster0.tcuhmiw.mongodb.net/installment_shop?retryWrites=true&w=majority';
+process.env.MONGO_URI = process.env.MONGO_URI || 'mongodb+srv://hajjimuhammadnabi_db_user:yousufkhan123@cluster0.f917dlj.mongodb.net/installment_shop?retryWrites=true&w=majority';
 process.env.CLIENT_URL = process.env.CLIENT_URL || 'http://localhost:5000';
 
 // Google Drive 200GB Cloud Storage Defaults (100% active on Vercel Serverless)
@@ -75,17 +75,15 @@ const allowedOrigins = [
   process.env.CLIENT_URL
 ].filter(Boolean);
 
-app.use(cors({ 
+app.use(cors({
   origin: function (origin, callback) {
-    if (!origin || allowedOrigins.indexOf(origin) !== -1 || origin.startsWith('http://localhost:') || origin.startsWith('http://127.0.0.1:')) {
-      callback(null, true);
-    } else {
-      callback(null, true);
-    }
-  }, 
+    // Allow localhost, LAN, vercel.app, or any origin
+    callback(null, true);
+  },
   credentials: true,
   exposedHeaders: ['Content-Disposition']
 }));
+app.options('*', cors({ origin: true, credentials: true }));
 app.use(express.json({ limit: '50mb' }));
 app.use(cookieParser());
 
@@ -292,14 +290,14 @@ app.get('/api/system-status', async (req, res) => {
   if (mongoose.connection.readyState !== 1) {
     try {
       await connectDB();
-    } catch (e) {}
+    } catch (e) { }
   }
   const isOnline = mongoose.connection.readyState === 1 || Boolean(process.env.VERCEL);
   res.json({
     success: true,
     mode: isOnline ? 'online' : 'offline',
-    statusMessage: isOnline 
-      ? 'Cloud Active (Atlas & Google Drive Synced)' 
+    statusMessage: isOnline
+      ? 'Cloud Active (Atlas & Google Drive Synced)'
       : 'Offline Mode (Local Drive Active - 100% Safe)',
     dbConnected: mongoose.connection.readyState === 1 || Boolean(process.env.VERCEL)
   });
@@ -317,7 +315,7 @@ const frontendDistPath = candidateDistPaths.find(p => fs.existsSync(p));
 
 if (frontendDistPath) {
   console.log(`📦 Serving frontend from: ${frontendDistPath}`);
-  
+
   // Custom header setter to prevent Windows registry MIME type corruption (e.g. text/plain for CSS)
   const setMimeHeaders = (res, filePath) => {
     if (filePath.endsWith('.css')) {
@@ -440,7 +438,7 @@ if (!process.env.VERCEL) {
 }
 
 // 4. Connect to MongoDB Atlas
-connectDB().catch(() => {});
+connectDB().catch(() => { });
 
 // 5. Start Background Auto-Reconnect and Cloud Sync (checks every 20s, local only)
 if (!process.env.VERCEL) {

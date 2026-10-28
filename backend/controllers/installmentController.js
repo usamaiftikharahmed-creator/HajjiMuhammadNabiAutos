@@ -11,7 +11,7 @@ import { invalidateDashboardCache } from '../routes/dashboardRoutes.js';
 import { triggerDebouncedLiveJsonSync } from '../services/backupService.js';
 import { offlineDb, recordDeletion } from '../services/offlineDb.js';
 import { mirrorUploadedFile, getUploadDirs } from '../services/uploadService.js';
-import { deleteFromGoogleDrive, uploadToGoogleDrive, listCustomerDriveFiles } from '../services/googleDriveService.js';
+import { deleteFromGoogleDrive, uploadToGoogleDrive, listCustomerDriveFiles, createResumableDriveUploadSession, registerUploadedDriveFile } from '../services/googleDriveService.js';
 
 // Process-wide Singleton RAM cache for sub-millisecond page loads (<1ms)
 const SALES_CACHE_TTL_MS = 2000; // 2 seconds TTL (prevents stale data across page refreshes)
@@ -1006,6 +1006,153 @@ export const uploadSaleDocuments = async (req, res) => {
     res.status(500).json({ success: false, message: error.message });
   }
 };
+
+// 6a-1. Initialize Direct Google Drive Upload Session (Bypasses Vercel 4.5MB Payload Limit)
+export const initDirectSaleDocumentUpload = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { fileName, fileType, fileSize, title } = req.body;
+
+    if (!fileName) {
+      return res.status(400).json({ success: false, message: 'fileName is required' });
+    }
+
+    let sale = null;
+    if (id && mongoose.Types.ObjectId.isValid(id)) {
+      sale = await InstallmentSale.findById(id);
+      if (!sale) {
+        sale = await InstallmentSale.findOne({ customer: id }).sort({ createdAt: -1 });
+      }
+    }
+    if (!sale && id) {
+      const cust = await Customer.findOne({ customerId: String(id).toUpperCase() });
+      if (cust) {
+        sale = await InstallmentSale.findOne({ customer: cust._id }).sort({ createdAt: -1 });
+      }
+    }
+
+    if (!sale) {
+      return res.status(404).json({ success: false, message: 'Installment account not found' });
+    }
+
+    let customer = null;
+    if (sale.customer) {
+      customer = await Customer.findById(sale.customer);
+    }
+    const customerContext = {
+      customerId: customer?.customerId || sale.customerId,
+      customerName: customer?.name
+    };
+
+    // Sanitize and create timestamped unique filename
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
+    let ext = path.extname(fileName || '').toLowerCase();
+    if (!ext) {
+      if (fileType === 'application/pdf') ext = '.pdf';
+      else if (fileType === 'image/png') ext = '.png';
+      else if (fileType === 'image/webp') ext = '.webp';
+      else if (fileType?.startsWith('image/')) ext = '.jpg';
+      else ext = '.bin';
+    }
+    const cleanFilename = `${uniqueSuffix}${ext}`;
+
+    const origin = req.headers.origin || req.headers.referer || '*';
+    const session = await createResumableDriveUploadSession(
+      cleanFilename,
+      fileType || 'application/octet-stream',
+      customerContext,
+      origin
+    );
+
+    return res.json({
+      success: true,
+      uploadUrl: session.uploadUrl,
+      cleanFilename,
+      saleId: sale._id
+    });
+  } catch (error) {
+    console.error('initDirectSaleDocumentUpload error:', error);
+    return res.status(500).json({ success: false, message: error.message || 'Failed to initialize direct cloud upload' });
+  }
+};
+
+// 6a-2. Confirm Direct Google Drive Upload and Link Document into Sale Record
+export const confirmDirectSaleDocumentUpload = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { driveFileId, cleanFilename, title, fileSize, fileType } = req.body;
+
+    if (!driveFileId || !cleanFilename) {
+      return res.status(400).json({ success: false, message: 'driveFileId and cleanFilename are required' });
+    }
+
+    let sale = null;
+    if (id && mongoose.Types.ObjectId.isValid(id)) {
+      sale = await InstallmentSale.findById(id);
+      if (!sale) {
+        sale = await InstallmentSale.findOne({ customer: id }).sort({ createdAt: -1 });
+      }
+    }
+    if (!sale && id) {
+      const cust = await Customer.findOne({ customerId: String(id).toUpperCase() });
+      if (cust) {
+        sale = await InstallmentSale.findOne({ customer: cust._id }).sort({ createdAt: -1 });
+      }
+    }
+
+    if (!sale) {
+      return res.status(404).json({ success: false, message: 'Installment account not found' });
+    }
+
+    // Register with in-memory cache and ensure public read permissions
+    try {
+      await registerUploadedDriveFile(driveFileId, cleanFilename, fileType, fileSize);
+    } catch (regErr) {
+      console.warn('registerUploadedDriveFile notice:', regErr.message);
+    }
+
+    const targetSale = await InstallmentSale.findById(sale._id);
+    if (!targetSale) {
+      return res.status(404).json({ success: false, message: 'Installment account not found' });
+    }
+
+    const docTitle = (title || '').trim() || cleanFilename || 'Document';
+    const fileUrl = `/uploads/${cleanFilename}`;
+
+    const newDoc = {
+      title: docTitle,
+      fileUrl,
+      driveFileId,
+      createdAt: new Date()
+    };
+
+    if (!targetSale.documents) targetSale.documents = [];
+    targetSale.documents.push(newDoc);
+    targetSale.markModified('documents');
+    await targetSale.save();
+
+    // Mirror to offlineDb if local
+    try {
+      if (offlineDb?.installmentSales?.findByIdAndUpdate) {
+        offlineDb.installmentSales.findByIdAndUpdate(sale._id, { $set: { documents: targetSale.documents } }).catch(() => {});
+      }
+    } catch (e) {}
+
+    invalidateSalesCache();
+
+    return res.json({
+      success: true,
+      message: 'Document saved and linked successfully',
+      documents: targetSale.documents,
+      newDoc,
+      saleId: sale._id
+    });
+  } catch (error) {
+    console.error('confirmDirectSaleDocumentUpload error:', error);
+    return res.status(500).json({ success: false, message: error.message || 'Failed to confirm document upload' });
+  }
+};
+
 
 // 6b. Delete a Document from an Existing Sale
 export const deleteSaleDocument = async (req, res) => {

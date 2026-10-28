@@ -528,3 +528,107 @@ export const deleteFromGoogleDrive = async (fileNameOrId) => {
   }
 };
 
+/**
+ * Create a Google Drive Resumable Upload Session URL.
+ * Allows client browser to upload large files (PDFs, images) directly to Google Drive,
+ * completely bypassing Vercel's 4.5MB Serverless function payload limit.
+ */
+export const createResumableDriveUploadSession = async (fileName, mimeType = 'application/octet-stream', customerContext = null, origin = '*') => {
+  const drive = getDriveClient();
+  if (!drive) {
+    throw new Error('Google Drive is not configured on this server');
+  }
+
+  let targetFolderId = process.env.GOOGLE_DRIVE_FOLDER_ID;
+  if (customerContext && (customerContext.customerId || customerContext.id)) {
+    const custId = customerContext.customerId || customerContext.id;
+    const custName = customerContext.customerName || customerContext.name || '';
+    try {
+      targetFolderId = await getOrCreateCustomerDriveFolder(custId, custName);
+    } catch (fErr) {
+      console.warn('Customer folder creation notice:', fErr.message);
+    }
+  }
+
+  // Get current fresh access token
+  const oauth2Client = drive.context._options.auth;
+  const tokenRes = await oauth2Client.getAccessToken();
+  const accessToken = typeof tokenRes === 'string' ? tokenRes : tokenRes?.token;
+  if (!accessToken) {
+    throw new Error('Failed to acquire valid Google Drive access token');
+  }
+
+  const fileMetadata = {
+    name: fileName,
+    parents: [targetFolderId]
+  };
+
+  const headers = {
+    'Authorization': `Bearer ${accessToken}`,
+    'Content-Type': 'application/json; charset=UTF-8',
+    'X-Upload-Content-Type': mimeType || 'application/octet-stream'
+  };
+
+  if (origin && origin !== '*') {
+    headers['Origin'] = origin;
+  }
+
+  const res = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable', {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(fileMetadata)
+  });
+
+  if (!res.ok) {
+    const errText = await res.text();
+    throw new Error(`Google Drive API error (${res.status}): ${errText}`);
+  }
+
+  const uploadUrl = res.headers.get('location');
+  if (!uploadUrl) {
+    throw new Error('No upload location URL returned from Google Drive');
+  }
+
+  return {
+    uploadUrl,
+    targetFolderId,
+    fileName
+  };
+};
+
+/**
+ * Register newly uploaded Google Drive file with public read access and local in-memory cache
+ */
+export const registerUploadedDriveFile = async (driveFileId, fileName, mimeType = 'application/octet-stream', size = 0) => {
+  const drive = getDriveClient();
+  if (drive && driveFileId) {
+    try {
+      await drive.permissions.create({
+        fileId: driveFileId,
+        requestBody: { role: 'reader', type: 'anyone' }
+      });
+    } catch (e) {
+      // Permission might already be inherited from root folder
+    }
+  }
+
+  const entry = {
+    id: driveFileId,
+    name: fileName,
+    mimeType: mimeType || 'application/octet-stream',
+    size: size || 0,
+    directLink: `https://lh3.googleusercontent.com/d/${driveFileId}`
+  };
+
+  cloudFileCache.set(fileName, entry);
+  cloudFileCache.set(driveFileId, entry);
+  const baseName = fileName.replace(/\.[^/.]+$/, '');
+  if (!cloudFileCache.has(baseName)) {
+    cloudFileCache.set(baseName, entry);
+  }
+
+  console.log(`☁️ [Google Drive Direct Register]: Linked "${fileName}" (ID: ${driveFileId})`);
+  return entry;
+};
+
+

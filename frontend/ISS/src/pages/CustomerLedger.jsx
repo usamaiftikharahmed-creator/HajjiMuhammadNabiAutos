@@ -468,21 +468,94 @@ export default function CustomerLedger() {
     }
 
     setIsUploadingDocs(true);
+    const toastId = toast.loading('Document(s) Google Drive cloud par upload ho rahe hain...');
 
     try {
-      const formData = new FormData();
-      validDocs.forEach((doc, idx) => {
-        formData.append('documents', doc.file);
-        formData.append(`docTitle_${idx}`, doc.title.trim() || doc.file.name || `Document ${idx + 1}`);
-      });
+      let latestDocuments = null;
+      let allSuccess = true;
 
-      const res = await API.post(`/installments/sales/${docSaleId}/documents`, formData, {
-        headers: { 'Content-Type': 'multipart/form-data' }
-      });
+      for (let idx = 0; idx < validDocs.length; idx++) {
+        const item = validDocs[idx];
+        const docTitle = item.title.trim() || item.file.name || `Document ${idx + 1}`;
+        const file = item.file;
+        const fileSizeMb = (file.size / (1024 * 1024)).toFixed(1);
 
-      if (res.data?.success) {
-        toast.success('Document(s) kamyabi se attach ho gaye!');
-        
+        toast.loading(`Uploading "${docTitle}" (${fileSizeMb} MB)...`, { id: toastId });
+
+        let itemUploaded = false;
+
+        // 1. Try Direct Google Drive Upload (Completely bypasses Vercel 4.5MB Serverless limit)
+        try {
+          const initRes = await API.post(`/installments/sales/${docSaleId}/documents/init-direct`, {
+            fileName: file.name,
+            fileType: file.type || 'application/octet-stream',
+            fileSize: file.size,
+            title: docTitle
+          });
+
+          if (initRes.data?.success && initRes.data?.uploadUrl) {
+            const { uploadUrl, cleanFilename } = initRes.data;
+
+            // Stream file directly from browser to Google Drive
+            const driveUploadRes = await fetch(uploadUrl, {
+              method: 'PUT',
+              headers: {
+                'Content-Type': file.type || 'application/octet-stream'
+              },
+              body: file
+            });
+
+            if (!driveUploadRes.ok) {
+              throw new Error(`Google Drive upload error: HTTP ${driveUploadRes.status}`);
+            }
+
+            const driveFileData = await driveUploadRes.json().catch(() => ({}));
+            const driveFileId = driveFileData.id || driveFileData.fileId;
+
+            // Confirm and link into MongoDB database
+            const confirmRes = await API.post(`/installments/sales/${docSaleId}/documents/confirm-direct`, {
+              driveFileId,
+              cleanFilename,
+              title: docTitle,
+              fileSize: file.size,
+              fileType: file.type || 'application/octet-stream'
+            });
+
+            if (confirmRes.data?.success) {
+              itemUploaded = true;
+              latestDocuments = confirmRes.data.documents;
+            }
+          }
+        } catch (directErr) {
+          console.warn(`Direct Drive upload failed for "${docTitle}", attempting standard upload:`, directErr);
+
+          // 2. Fallback to standard multipart upload if file is small enough (< 4MB)
+          if (file.size <= 4 * 1024 * 1024) {
+            const formData = new FormData();
+            formData.append('documents', file);
+            formData.append('docTitle_0', docTitle);
+
+            const fallbackRes = await API.post(`/installments/sales/${docSaleId}/documents`, formData, {
+              headers: { 'Content-Type': 'multipart/form-data' }
+            });
+
+            if (fallbackRes.data?.success) {
+              itemUploaded = true;
+              latestDocuments = fallbackRes.data.documents;
+            }
+          } else {
+            throw new Error(`"${docTitle}" ka size (${fileSizeMb} MB) bara hai aur direct cloud upload me masla aaya: ${directErr.message}`);
+          }
+        }
+
+        if (!itemUploaded) {
+          allSuccess = false;
+        }
+      }
+
+      if (allSuccess) {
+        toast.success('Document(s) Google Drive aur customer account me attach ho gaye!', { id: toastId });
+
         // 100% Guaranteed Form & File-Input Clearing
         setNewDocList([{ title: '', file: null }]);
         setDocFormKey(prev => prev + 1);
@@ -490,24 +563,24 @@ export default function CustomerLedger() {
           try { uploadDocFormRef.current.reset(); } catch (e) {}
         }
 
-        if (res.data.documents) {
+        if (latestDocuments) {
           setLedgerData(prev => {
             if (!prev) return prev;
             return {
               ...prev,
               installmentSales: (prev.installmentSales || []).map(s => 
-                s._id === docSaleId ? { ...s, documents: res.data.documents } : s
+                s._id === docSaleId ? { ...s, documents: latestDocuments } : s
               )
             };
           });
         }
         await handleSearch();
       } else {
-        toast.error(res.data?.message || 'Document upload karne me masla aaya');
+        toast.error('Kuch documents upload nahi ho sakay, dobara try karein', { id: toastId });
       }
     } catch (err) {
       console.error('Upload Doc Error:', err);
-      toast.error(err.response?.data?.message || 'Server error while uploading document');
+      toast.error(err.response?.data?.message || err.message || 'Server error while uploading document', { id: toastId });
     } finally {
       setIsUploadingDocs(false);
     }
