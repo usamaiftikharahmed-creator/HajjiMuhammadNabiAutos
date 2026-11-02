@@ -318,7 +318,7 @@ export const getAggregatedSales = () => {
         forMonth: p.forMonth,
         transactionId: p.transactionId,
         notes: p.notes,
-        createdAt: p.createdAt,
+        createdAt: String(p.forMonth || '').toLowerCase() === 'advance payment' ? (s.createdAt || p.createdAt) : p.createdAt,
         _id: p._id
       }));
 

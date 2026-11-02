@@ -569,7 +569,8 @@ export default function ViewDetailsModal({ selectedSale, onClose, onRefresh, onO
                         pay.notes?.toLowerCase().includes('advance') ||
                         !pay.forMonth || pay.forMonth === '-';
 
-                      const payDate = pay.createdAt || pay.paymentDate;
+                      const isInitialAdvance = String(pay.forMonth || '').toLowerCase() === 'advance payment' || !pay.forMonth || pay.forMonth === '-';
+                      const payDate = isInitialAdvance ? (selectedSale.createdAt || pay.createdAt || pay.paymentDate) : (pay.createdAt || pay.paymentDate);
 
                       return (
                         <tr key={pay._id || idx} className="hover:bg-slate-900/30">

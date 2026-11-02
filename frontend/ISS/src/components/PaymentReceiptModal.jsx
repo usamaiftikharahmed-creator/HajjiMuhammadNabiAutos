@@ -35,7 +35,20 @@ export default function PaymentReceiptModal({ payment, sale, onClose }) {
   const remainingBalance = Number(sale?.remainingBalance ?? 0);
   const prevBalance = remainingBalance + amountPaid;
 
-  const paymentDate = payment?.createdAt || payment?.date || Date.now();
+  // Determine if this is an advance booking payment or a regular monthly installment
+  const isInitialAdvance =
+    String(payment?.forMonth || '').toLowerCase() === 'advance payment' ||
+    !payment?.forMonth ||
+    payment?.forMonth === '-';
+
+  const isAdvance = 
+    isInitialAdvance ||
+    payment?.forMonth?.toLowerCase().includes('advance') || 
+    payment?.notes?.toLowerCase().includes('advance');
+
+  const paymentDate = isInitialAdvance
+    ? (sale?.createdAt || payment?.createdAt || payment?.date || Date.now())
+    : (payment?.createdAt || payment?.date || Date.now());
   const promiseInfo = getPromiseMonthsInfo(sale, new Date(paymentDate));
   const remainingMonths = promiseInfo.remainingMonths;
   const promiseMonthStr = promiseInfo.promiseMonthStr;
@@ -52,13 +65,6 @@ export default function PaymentReceiptModal({ payment, sale, onClose }) {
   const receiptNo = payment?._id 
     ? `REC-${String(payment._id).slice(-6).toUpperCase()}` 
     : `REC-${Date.now().toString().slice(-6)}`;
-
-  // Determine if this is an advance booking payment or a regular monthly installment
-  const isAdvance = 
-    payment?.forMonth?.toLowerCase().includes('advance') || 
-    payment?.notes?.toLowerCase().includes('advance') ||
-    !payment?.forMonth || 
-    payment?.forMonth === '-';
 
   const paymentTypeLabel = isAdvance ? 'Advance / Booking Payment' : (payment?.forMonth || 'Monthly Installment');
   const paymentMethod = (payment?.paymentMethod || payment?.paymentMode || 'Cash').toUpperCase();

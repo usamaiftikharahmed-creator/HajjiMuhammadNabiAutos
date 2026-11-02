@@ -36,7 +36,10 @@ export default function A4ReceiptModal({ saleData, paymentData, onClose }) {
   const totalVal = Number(saleData?.totalAmount || saleData?.grandTotal || 0);
   const monthlyVal = Number(saleData?.monthlyAmount || saleData?.monthlyInstallment || 0);
 
-  const receiptDate = paymentData?.createdAt ? new Date(paymentData.createdAt) : new Date();
+  const isInitialAdvance = !paymentData || String(paymentData?.forMonth || '').toLowerCase() === 'advance payment';
+  const receiptDate = isInitialAdvance
+    ? (saleData?.createdAt ? new Date(saleData.createdAt) : (paymentData?.createdAt ? new Date(paymentData.createdAt) : new Date()))
+    : (paymentData?.createdAt ? new Date(paymentData.createdAt) : (saleData?.createdAt ? new Date(saleData.createdAt) : new Date()));
   const promiseInfo = getPromiseMonthsInfo(saleData, receiptDate);
   const totalMonths = promiseInfo.totalMonths;
   const remainingMonths = promiseInfo.remainingMonths;
@@ -47,7 +50,7 @@ export default function A4ReceiptModal({ saleData, paymentData, onClose }) {
     ? `REC-${String(paymentData._id).slice(-6).toUpperCase()}` 
     : `INV-${Date.now().toString().slice(-6)}`;
 
-  const todayStr = new Date().toLocaleDateString('en-PK', { day: '2-digit', month: 'short', year: 'numeric' });
+  const todayStr = receiptDate.toLocaleDateString('en-PK', { day: '2-digit', month: 'short', year: 'numeric' });
 
   // Calculate Next Due Date
   let nextDueDate = saleData?.nextDueDate ? new Date(saleData.nextDueDate) : new Date();

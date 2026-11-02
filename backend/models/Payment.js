@@ -33,6 +33,11 @@ const paymentSchema = new mongoose.Schema(
     receivedBy: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'User'
+    },
+    createdAt: {
+      type: Date,
+      default: Date.now,
+      immutable: false
     }
   },
   { timestamps: true }

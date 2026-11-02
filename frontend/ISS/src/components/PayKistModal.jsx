@@ -37,6 +37,7 @@ export default function PayKistModal({ sale, selectedSale, onClose, onSuccess })
   const [isPayingRemainingAdvance, setIsPayingRemainingAdvance] = useState(false);
   const [forMonth, setForMonth] = useState(defaultMonth);
   const [amountPaid, setAmountPaid] = useState(defaultAmount);
+  const [paymentDate, setPaymentDate] = useState(() => new Date().toISOString().split('T')[0]);
   const [paymentMethod, setPaymentMethod] = useState('Cash');
   const [transactionId, setTransactionId] = useState('');
   const [notes, setNotes] = useState('');
@@ -134,7 +135,8 @@ export default function PayKistModal({ sale, selectedSale, onClose, onSuccess })
         transactionId,
         forMonth: isPayingRemainingAdvance ? 'Remaining Advance' : forMonth,
         notes: notes || (isPayingRemainingAdvance ? 'Remaining Advance Cleared' : ''),
-        isRemainingAdvance: isPayingRemainingAdvance
+        isRemainingAdvance: isPayingRemainingAdvance,
+        paymentDate
       });
 
       if (res.data?.success) {
@@ -182,10 +184,17 @@ export default function PayKistModal({ sale, selectedSale, onClose, onSuccess })
     if (activeSale.chassisNumber) regParts.push(`Chas: ${activeSale.chassisNumber}`);
     const regStr = regParts.length > 0 ? ` (${regParts.join(' | ')})` : '';
 
+    const formattedPayDate = new Date(createdPayment.createdAt || paymentDate).toLocaleDateString('en-PK', {
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric'
+    });
+
     const message = 
       `*HAJJI MOHAMMAD NABI AUTOS*\n` +
       `*PAYMENT CONFIRMATION RECEIPT*\n` +
       `----------------------------------------\n` +
+      `*Date:* ${formattedPayDate}\n` +
       `*Customer:* ${customerName} (${customerId})\n` +
       `*Item:* ${activeSale.itemName}${regStr}\n` +
       `*Amount Received:* Rs. ${Number(createdPayment.amountPaid || amountPaid).toLocaleString()}\n` +
@@ -241,6 +250,12 @@ export default function PayKistModal({ sale, selectedSale, onClose, onSuccess })
             <div className="flex justify-between">
               <span className="text-slate-400">Installment Month:</span>
               <span className="text-purple-400 font-semibold">{createdPayment.forMonth}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-slate-400">Payment Date:</span>
+              <span className="text-emerald-300 font-semibold">
+                {new Date(createdPayment.createdAt || paymentDate).toLocaleDateString('en-PK', { day: '2-digit', month: 'short', year: 'numeric' })}
+              </span>
             </div>
             <div className="flex justify-between">
               <span className="text-slate-400">Payment Mode:</span>
@@ -580,6 +595,19 @@ export default function PayKistModal({ sale, selectedSale, onClose, onSuccess })
             </div>
 
             <div>
+              <label className="block text-emerald-300 font-semibold mb-1">Payment Date / تاریخ وصولی *</label>
+              <input
+                type="date"
+                value={paymentDate}
+                onChange={(e) => setPaymentDate(e.target.value)}
+                required
+                className="w-full bg-slate-950 border border-emerald-500/40 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-emerald-500 cursor-pointer font-mono font-bold"
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
               <label className="block text-slate-300 font-medium mb-1">Payment Method / ادائیگی کا طریقہ *</label>
               <select
                 value={paymentMethod}
@@ -592,17 +620,17 @@ export default function PayKistModal({ sale, selectedSale, onClose, onSuccess })
                 <option value="JazzCash">JazzCash (جاز کیش)</option>
               </select>
             </div>
-          </div>
 
-          <div>
-            <label className="block text-slate-300 font-medium mb-1">Transaction Ref / ID / ٹرانزیکشن یا رسید نمبر <span className="text-slate-400 font-normal">(Optional / اختیاری)</span></label>
-            <input
-              type="text"
-              value={transactionId}
-              onChange={(e) => setTransactionId(e.target.value)}
-              placeholder="e.g. TRX-982312 or Bank Ref"
-              className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2 text-white focus:outline-none focus:border-emerald-500"
-            />
+            <div>
+              <label className="block text-slate-300 font-medium mb-1">Transaction Ref / ID / رسید نمبر <span className="text-slate-400 font-normal">(Optional)</span></label>
+              <input
+                type="text"
+                value={transactionId}
+                onChange={(e) => setTransactionId(e.target.value)}
+                placeholder="e.g. TRX-982312 or Bank Ref"
+                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2 text-white focus:outline-none focus:border-emerald-500"
+              />
+            </div>
           </div>
 
           <div>

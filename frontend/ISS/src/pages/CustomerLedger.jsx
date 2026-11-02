@@ -66,6 +66,7 @@ export default function CustomerLedger() {
 
     // Sale Info
     saleId: '',
+    bookingDate: '',       // EDITABLE (Sale & Advance Date)
     itemName: '',          // LOCKED
     totalAmount: 0,        // LOCKED
     advancePayment: 0,     // LOCKED
@@ -180,6 +181,7 @@ export default function CustomerLedger() {
           guarantor2Phone: cust.guarantor2Phone || '',
 
           saleId: primarySale?._id || '',
+          bookingDate: primarySale?.createdAt ? new Date(primarySale.createdAt).toISOString().split('T')[0] : '',
           itemName: primarySale?.itemName || '',
           totalAmount: primarySale?.totalAmount || 0,
           advancePayment: primarySale?.advancePayment || 0,
@@ -218,6 +220,7 @@ export default function CustomerLedger() {
       setEditFormData(prev => ({
         ...prev,
         saleId: sale._id,
+        bookingDate: sale.createdAt ? new Date(sale.createdAt).toISOString().split('T')[0] : '',
         itemName: sale.itemName || '',
         totalAmount: sale.totalAmount || 0,
         advancePayment: sale.advancePayment || 0,
@@ -344,6 +347,7 @@ export default function CustomerLedger() {
       // 2. If a sale exists, update all sale fields (Fully editable by admin)
       if (editFormData.saleId) {
         await API.put(`/installments/sales/${editFormData.saleId}`, {
+          bookingDate: editFormData.bookingDate,
           itemName: editFormData.itemName,
           totalAmount: editFormData.totalAmount,
           advancePayment: editFormData.advancePayment,
@@ -1214,12 +1218,18 @@ export default function CustomerLedger() {
 
                           <button
                             onClick={() => {
-                              const salePayment = ledgerData.payments.find(p => (p.installmentSale?._id || p.installmentSale) === sale._id) || {
-                                amountPaid: sale.advancePayment || 0,
-                                createdAt: sale.createdAt,
-                                forMonth: 'Advance Payment',
-                                paymentMethod: 'Cash'
-                              };
+                              const advancePaymentObj = ledgerData.payments.find(
+                                p => (p.installmentSale?._id || p.installmentSale) === sale._id &&
+                                     String(p.forMonth || '').toLowerCase() === 'advance payment'
+                              );
+                              const salePayment = advancePaymentObj
+                                ? { ...advancePaymentObj, createdAt: sale.createdAt || advancePaymentObj.createdAt }
+                                : {
+                                    amountPaid: sale.advancePayment || 0,
+                                    createdAt: sale.createdAt,
+                                    forMonth: 'Advance Payment',
+                                    paymentMethod: 'Cash'
+                                  };
                               setSelectedPayment(salePayment);
                               setSelectedSaleForReceipt({ ...sale, customer: ledgerData.customer });
                             }}
@@ -1420,18 +1430,23 @@ export default function CustomerLedger() {
                   </thead>
                   <tbody className="divide-y divide-slate-800 text-slate-300 print:divide-gray-300 print:text-black">
                     {filteredPayments.map((payment) => {
-                      const isAdvance = payment.forMonth?.toLowerCase().includes('advance') || payment.notes?.toLowerCase().includes('advance');
+                      const isInitialAdvance = String(payment.forMonth || '').toLowerCase() === 'advance payment' || !payment.forMonth || payment.forMonth === '-';
+                      const isAdvance = isInitialAdvance || payment.forMonth?.toLowerCase().includes('advance') || payment.notes?.toLowerCase().includes('advance');
+                      const matchedSaleForRow = ledgerData.installmentSales.find(s => s._id === (payment.installmentSale?._id || payment.installmentSale)) || ledgerData.installmentSales[0];
+                      const displayPayDate = isInitialAdvance
+                        ? (matchedSaleForRow?.createdAt || payment.createdAt)
+                        : payment.createdAt;
 
                       return (
                         <tr key={payment._id} className="hover:bg-slate-800/50 transition">
                           <td className="p-3 font-medium text-slate-200 print:text-black">
-                            {new Date(payment.createdAt).toLocaleDateString('en-PK', { day: '2-digit', month: 'short', year: 'numeric' })}
+                            {new Date(displayPayDate).toLocaleDateString('en-PK', { day: '2-digit', month: 'short', year: 'numeric' })}
                           </td>
                           <td className="p-3">
                             <span className={`px-2 py-0.5 rounded text-[11px] font-bold ${
                               isAdvance ? 'bg-blue-500/10 text-blue-400 border border-blue-500/20' : 'bg-purple-500/10 text-purple-400 border border-purple-500/20'
                             }`}>
-                              {isAdvance ? 'Advance Payment' : (payment.forMonth || 'Monthly Installment')}
+                              {isInitialAdvance ? 'Advance Payment' : (payment.forMonth || 'Monthly Installment')}
                             </span>
                           </td>
                           <td className="p-3 uppercase">{payment.paymentMethod || 'Cash'}</td>
@@ -1874,6 +1889,16 @@ export default function CustomerLedger() {
                   </div>
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5 pt-1">
+                    <div>
+                      <label className="block text-emerald-300 mb-1 font-semibold">Sale / Advance Date (تاریخ خریداری)</label>
+                      <input
+                        type="date"
+                        value={editFormData.bookingDate || ''}
+                        onChange={(e) => setEditFormData({ ...editFormData, bookingDate: e.target.value })}
+                        className="w-full bg-slate-900 border border-emerald-500/40 rounded-xl px-3.5 py-2 text-white outline-none focus:border-emerald-500 text-xs font-mono font-bold cursor-pointer"
+                      />
+                    </div>
+
                     <div>
                       <label className="block text-slate-300 mb-1 font-medium">Item Name *</label>
                       <input

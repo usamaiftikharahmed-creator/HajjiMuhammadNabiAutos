@@ -41,7 +41,7 @@ async function cleanSystem() {
   console.log('========================================================\n');
 
   // 1. Connect to MongoDB Atlas
-  const uri = process.env.MONGO_URI || 'mongodb+srv://usamaiftikharahmed:Chlorobenzene@cluster0.tcuhmiw.mongodb.net/installment_shop?retryWrites=true&w=majority';
+  const uri = process.env.MONGO_URI || 'mongodb+srv://hajjimuhammadnabi_db_user:yousufkhan123@cluster0.f917dlj.mongodb.net/installment_shop?retryWrites=true&w=majority';
   console.log('1. Connecting to MongoDB Atlas...');
   await mongoose.connect(uri);
   console.log('✅ Connected to MongoDB Atlas!\n');
@@ -195,13 +195,13 @@ async function cleanSystem() {
     try {
       fs.writeFileSync(path.join(dDir, 'activityLogs.json'), JSON.stringify(cleanLog, null, 2), 'utf-8');
       console.log(`      ✓ activityLogs.json -> 1 initialization log`);
-    } catch (e) {}
+    } catch (e) { }
 
     // Write clean summary.json
     try {
       fs.writeFileSync(path.join(dDir, 'summary.json'), JSON.stringify(cleanSummary, null, 2), 'utf-8');
       console.log(`      ✓ summary.json -> Zeroed counts`);
-    } catch (e) {}
+    } catch (e) { }
   }
 
   // 6. Clean Dummy Uploaded Files
@@ -220,7 +220,7 @@ async function cleanSystem() {
             fs.unlinkSync(fullPath);
             console.log(`      🗑️ Removed uploaded dummy file: ${f}`);
           }
-        } catch (e) {}
+        } catch (e) { }
       }
     } catch (e) {
       console.warn(`      ⚠️ Notice reading uploads dir:`, e.message);
@@ -245,9 +245,9 @@ async function cleanSystem() {
             fs.unlinkSync(fullPath);
             console.log(`      🗑️ Removed old backup file: ${it}`);
           }
-        } catch (e) {}
+        } catch (e) { }
       }
-    } catch (e) {}
+    } catch (e) { }
   }
 
   console.log('\n========================================================');

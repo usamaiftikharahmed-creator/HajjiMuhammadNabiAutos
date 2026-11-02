@@ -311,6 +311,16 @@ export const recordPayment = async (req, res) => {
     const forMonth = req.body.forMonth || new Date().toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
     const notes = req.body.notes || '';
 
+    // Support custom/past payment received date
+    const rawPaymentDate = cleanStr(req.body.paymentDate || req.body.date || req.body.receivedDate);
+    let paymentDate = new Date();
+    if (rawPaymentDate) {
+      const parsed = new Date(rawPaymentDate);
+      if (!isNaN(parsed.getTime())) {
+        paymentDate = parsed;
+      }
+    }
+
     if (!saleId || rawAmount === undefined || rawAmount === null) {
       return res.status(400).json({ success: false, message: 'Sale ID and amount are required' });
     }
@@ -318,6 +328,11 @@ export const recordPayment = async (req, res) => {
     const sale = await InstallmentSale.findById(saleId).populate('customer');
     if (!sale) {
       return res.status(404).json({ success: false, message: 'Installment account not found' });
+    }
+
+    // Advance payment date must always match sale creation date
+    if (String(forMonth).toLowerCase() === 'advance payment' && sale.createdAt) {
+      paymentDate = new Date(sale.createdAt);
     }
 
     const paid = Number(rawAmount);
@@ -354,7 +369,8 @@ export const recordPayment = async (req, res) => {
         transactionId,
         forMonth: 'Remaining Advance',
         notes: notes || 'Remaining Advance Payment Received',
-        receivedBy: req.user?._id || null
+        receivedBy: req.user?._id || null,
+        createdAt: paymentDate
       });
 
       sale.remainingAdvance = Math.max(0, (sale.remainingAdvance || 0) - paid);
@@ -362,7 +378,9 @@ export const recordPayment = async (req, res) => {
       if (sale.remainingAdvance === 0) {
         sale.remainingAdvanceStatus = 'PAID';
       }
-      sale.lastPaymentDate = new Date();
+      if (!sale.lastPaymentDate || paymentDate > new Date(sale.lastPaymentDate)) {
+        sale.lastPaymentDate = paymentDate;
+      }
       await sale.save();
 
       await logActivity({
@@ -372,7 +390,7 @@ export const recordPayment = async (req, res) => {
         details: `Remaining Advance Wasooli: Rs. ${paid.toLocaleString()} wasool huay for "${sale.customer?.name || 'Customer'}" (Item: "${sale.itemName}"). Baqi Advance: Rs. ${sale.remainingAdvance.toLocaleString()}`,
         targetId: payment._id,
         targetName: sale.customer?.name,
-        metadata: { itemName: sale.itemName, paid, paymentMethod, remainingAdvance: sale.remainingAdvance }
+        metadata: { itemName: sale.itemName, paid, paymentMethod, remainingAdvance: sale.remainingAdvance, paymentDate }
       });
 
       invalidateSalesCache();
@@ -401,7 +419,8 @@ export const recordPayment = async (req, res) => {
       transactionId,
       forMonth,
       notes,
-      receivedBy: req.user?._id || null
+      receivedBy: req.user?._id || null,
+      createdAt: paymentDate
     });
 
     // Update remaining balance & completion status
@@ -409,7 +428,9 @@ export const recordPayment = async (req, res) => {
     if (sale.remainingBalance === 0) {
       sale.status = 'completed';
     }
-    sale.lastPaymentDate = new Date();
+    if (!sale.lastPaymentDate || paymentDate > new Date(sale.lastPaymentDate)) {
+      sale.lastPaymentDate = paymentDate;
+    }
 
     // Schedule next due date properly based on how many full monthly installments are cleared
     const totalFinanced = Math.max(0, (sale.totalAmount || 0) - (sale.advancePayment || 0));
@@ -453,7 +474,7 @@ export const recordPayment = async (req, res) => {
 
 // Reusable DB aggregation pipeline
 export const fetchSalesFromDB = async () => {
-  return await InstallmentSale.aggregate([
+  const rawSales = await InstallmentSale.aggregate([
     { $sort: { createdAt: -1 } },
     {
       $lookup: {
@@ -497,6 +518,19 @@ export const fetchSalesFromDB = async () => {
       }
     }
   ]);
+
+  // Ensure Advance Payment date always matches its Sale creation date
+  return rawSales.map(sale => {
+    if (Array.isArray(sale.payments) && sale.createdAt) {
+      sale.payments = sale.payments.map(p => {
+        if (String(p.forMonth || '').toLowerCase() === 'advance payment') {
+          return { ...p, createdAt: sale.createdAt };
+        }
+        return p;
+      });
+    }
+    return sale;
+  });
 };
 
 // Prewarm sales cache into Node RAM on startup
@@ -588,14 +622,30 @@ export const getCustomerLedger = async (req, res) => {
       });
     }
 
-    const [installmentSales, payments] = await Promise.all([
+    const [installmentSales, rawPayments] = await Promise.all([
       InstallmentSale.find({ customer: customer._id }).sort({ createdAt: -1 }).lean(),
       Payment.find({ customer: customer._id })
         .populate('receivedBy', 'name')
-        .populate('installmentSale', 'itemName itemRegNumber registrationNumber modelYear engineNumber chassisNumber totalAmount remainingBalance monthlyAmount')
+        .populate('installmentSale', 'itemName itemRegNumber registrationNumber modelYear engineNumber chassisNumber totalAmount remainingBalance monthlyAmount createdAt')
         .sort({ createdAt: -1 })
         .lean()
     ]);
+
+    // Always keep Advance Payment date synced with its Sale's createdAt date
+    const saleDateMap = new Map();
+    installmentSales.forEach(s => {
+      if (s._id && s.createdAt) saleDateMap.set(String(s._id), s.createdAt);
+    });
+    const payments = rawPayments.map(p => {
+      if (String(p.forMonth || '').toLowerCase() === 'advance payment') {
+        const sId = String(p.installmentSale?._id || p.installmentSale || '');
+        const sDate = p.installmentSale?.createdAt || saleDateMap.get(sId);
+        if (sDate) {
+          return { ...p, createdAt: sDate };
+        }
+      }
+      return p;
+    });
 
     // Auto-sync all files from customer's Google Drive folder into the primary sale documents
     try {
@@ -795,7 +845,7 @@ export const updateSaleDetails = async (req, res) => {
   try {
     const { id } = req.params;
     const { 
-      itemName, totalAmount, advancePayment,
+      itemName, totalAmount, advancePayment, bookingDate, saleDate,
       itemRegNumber, registrationNumber, modelYear, engineNumber, chassisNumber, monthlyAmount, dueDateDay, totalMonths, promiseMonth, promisedMonths,
       status, remarks, guarantorName, guarantorPhone, guarantor2Name, guarantor2Phone 
     } = req.body;
@@ -803,6 +853,15 @@ export const updateSaleDetails = async (req, res) => {
     const sale = await InstallmentSale.findById(id);
     if (!sale) {
       return res.status(404).json({ success: false, message: 'Installment sale not found' });
+    }
+
+    // Update sale creation/booking date if provided
+    const rawNewDate = cleanStr(bookingDate || saleDate);
+    if (rawNewDate) {
+      const parsedDate = new Date(rawNewDate);
+      if (!isNaN(parsedDate.getTime())) {
+        sale.createdAt = parsedDate;
+      }
     }
 
     if (itemName !== undefined && cleanStr(itemName)) {
@@ -816,31 +875,34 @@ export const updateSaleDetails = async (req, res) => {
       if (newAdv !== sale.advancePayment) {
         sale.advancePayment = newAdv;
         hasPriceOrAdvanceChange = true;
-
-        const advPayment = await Payment.findOne({
-          installmentSale: sale._id,
-          forMonth: 'Advance Payment'
-        });
-
-        if (advPayment) {
-          if (newAdv > 0) {
-            advPayment.amountPaid = newAdv;
-            await advPayment.save();
-          } else {
-            await Payment.deleteOne({ _id: advPayment._id });
-          }
-        } else if (newAdv > 0) {
-          await Payment.create({
-            installmentSale: sale._id,
-            customer: sale.customer,
-            amountPaid: newAdv,
-            paymentMethod: 'Cash',
-            forMonth: 'Advance Payment',
-            notes: 'Advance Payment at Booking',
-            createdAt: sale.createdAt || new Date()
-          });
-        }
       }
+    }
+
+    // Always keep Advance Payment record amount and date synced with sale.createdAt
+    const advPayment = await Payment.findOne({
+      installmentSale: sale._id,
+      forMonth: 'Advance Payment'
+    });
+
+    if (advPayment) {
+      if (sale.advancePayment > 0) {
+        advPayment.amountPaid = sale.advancePayment;
+        advPayment.createdAt = sale.createdAt || advPayment.createdAt;
+        await advPayment.save();
+        await Payment.updateOne({ _id: advPayment._id }, { $set: { amountPaid: sale.advancePayment, createdAt: sale.createdAt } });
+      } else {
+        await Payment.deleteOne({ _id: advPayment._id });
+      }
+    } else if (sale.advancePayment > 0) {
+      await Payment.create({
+        installmentSale: sale._id,
+        customer: sale.customer,
+        amountPaid: sale.advancePayment,
+        paymentMethod: 'Cash',
+        forMonth: 'Advance Payment',
+        notes: 'Advance Payment at Booking',
+        createdAt: sale.createdAt || new Date()
+      });
     }
 
     if (totalAmount !== undefined && !isNaN(Number(totalAmount)) && Number(totalAmount) > 0) {
