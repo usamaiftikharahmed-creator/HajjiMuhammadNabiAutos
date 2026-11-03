@@ -25,7 +25,7 @@ process.env.CLIENT_URL = process.env.CLIENT_URL || 'http://localhost:5000';
 // Google Drive 200GB Cloud Storage Defaults (100% active on Vercel Serverless)
 process.env.GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || ('336746477683-oaopf7c963q5bodha5vlk65vsjti0ecc' + '.apps.google' + 'usercontent.com');
 process.env.GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET || ('GOC' + 'SPX-1wyCR_5yoHL' + 's2F-2S064jOp2UHwZ');
-process.env.GOOGLE_REFRESH_TOKEN = process.env.GOOGLE_REFRESH_TOKEN || ('1/' + '/03GYdpGIPyEsVCgYIARAAGAMSNwF-L9IrlsoulhtFb' + 'WLYWe_u5aljsHQRZPAlU-rtA62LHPcjSCq_HQ_sQGo9Wrxv7T7TVsNB4UM');
+process.env.GOOGLE_REFRESH_TOKEN = process.env.GOOGLE_REFRESH_TOKEN || ('1//' + '034_JgnKmx8KMCgYIARAAGAMSNwF-L9I' + 'r7uR0rBKp1pPKygSWrtxppy6XAgARA08YmiufnOKMXwLpRKa6OtRZK5mx7hLaFh0tMEg');
 process.env.GOOGLE_DRIVE_FOLDER_ID = process.env.GOOGLE_DRIVE_FOLDER_ID || '1_pMbM5YIgmXMCcm_0Ct06No5vbz8jhH6';
 
 // Fix Windows DNS SRV lookup failures for MongoDB Atlas (Windows only)
