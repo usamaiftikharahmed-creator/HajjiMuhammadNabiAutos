@@ -11,6 +11,7 @@ import toast from 'react-hot-toast';
 import { getFileUrl, getCustomerInitials } from '../utils/fileUtils';
 import { getPromiseMonthsInfo } from '../utils/promiseUtils';
 import { compressImage } from '../utils/imageCompressor';
+import { uploadSaleDocumentReliably } from '../utils/cloudUploadHelper';
 
 import PaymentReceiptModal from '../components/PaymentReceiptModal';
 import OverdueAlert from '../components/OverdueAlert';
@@ -488,68 +489,18 @@ export default function CustomerLedger() {
 
         let itemUploaded = false;
 
-        // 1. Try Direct Google Drive Upload (Completely bypasses Vercel 4.5MB Serverless limit)
-        try {
-          const initRes = await API.post(`/installments/sales/${docSaleId}/documents/init-direct`, {
-            fileName: file.name,
-            fileType: file.type || 'application/octet-stream',
-            fileSize: file.size,
-            title: docTitle
-          });
-
-          if (initRes.data?.success && initRes.data?.uploadUrl) {
-            const { uploadUrl, cleanFilename } = initRes.data;
-
-            // Stream file directly from browser to Google Drive
-            const driveUploadRes = await fetch(uploadUrl, {
-              method: 'PUT',
-              headers: {
-                'Content-Type': file.type || 'application/octet-stream'
-              },
-              body: file
-            });
-
-            if (!driveUploadRes.ok) {
-              throw new Error(`Google Drive upload error: HTTP ${driveUploadRes.status}`);
-            }
-
-            const driveFileData = await driveUploadRes.json().catch(() => ({}));
-            const driveFileId = driveFileData.id || driveFileData.fileId;
-
-            // Confirm and link into MongoDB database
-            const confirmRes = await API.post(`/installments/sales/${docSaleId}/documents/confirm-direct`, {
-              driveFileId,
-              cleanFilename,
-              title: docTitle,
-              fileSize: file.size,
-              fileType: file.type || 'application/octet-stream'
-            });
-
-            if (confirmRes.data?.success) {
-              itemUploaded = true;
-              latestDocuments = confirmRes.data.documents;
-            }
+        const uploadData = await uploadSaleDocumentReliably({
+          saleId: docSaleId,
+          file,
+          title: docTitle,
+          onProgress: (pct) => {
+            toast.loading(`Uploading "${docTitle}" (${fileSizeMb} MB) — ${pct}%...`, { id: toastId });
           }
-        } catch (directErr) {
-          console.warn(`Direct Drive upload failed for "${docTitle}", attempting standard upload:`, directErr);
+        });
 
-          // 2. Fallback to standard multipart upload if file is small enough (< 4MB)
-          if (file.size <= 4 * 1024 * 1024) {
-            const formData = new FormData();
-            formData.append('documents', file);
-            formData.append('docTitle_0', docTitle);
-
-            const fallbackRes = await API.post(`/installments/sales/${docSaleId}/documents`, formData, {
-              headers: { 'Content-Type': 'multipart/form-data' }
-            });
-
-            if (fallbackRes.data?.success) {
-              itemUploaded = true;
-              latestDocuments = fallbackRes.data.documents;
-            }
-          } else {
-            throw new Error(`"${docTitle}" ka size (${fileSizeMb} MB) bara hai aur direct cloud upload me masla aaya: ${directErr.message}`);
-          }
+        if (uploadData?.success) {
+          itemUploaded = true;
+          latestDocuments = uploadData.documents;
         }
 
         if (!itemUploaded) {

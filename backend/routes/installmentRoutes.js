@@ -10,6 +10,7 @@ import {
   updatePromiseDate,
   uploadSaleDocuments,
   initDirectSaleDocumentUpload,
+  uploadSaleDocumentChunk,
   confirmDirectSaleDocumentUpload,
   deleteSaleDocument,
   deleteInstallmentSale,
@@ -38,6 +39,7 @@ router.delete('/sales/:id', deleteInstallmentSale);
 // Upload & Delete extra documents to existing sale
 router.post('/sales/:id/documents', upload.any(), compressUploads, uploadSaleDocuments);
 router.post('/sales/:id/documents/init-direct', initDirectSaleDocumentUpload);
+router.post('/sales/:id/documents/upload-chunk', uploadSaleDocumentChunk);
 router.post('/sales/:id/documents/confirm-direct', confirmDirectSaleDocumentUpload);
 router.delete('/sales/:id/documents/:docId', deleteSaleDocument);
 

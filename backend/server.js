@@ -56,6 +56,7 @@ import { loadAllData } from './services/offlineDb.js';
 import { syncOfflineDataToAtlas, startBackgroundSyncMonitor } from './services/syncService.js';
 import { getFileStreamFromGoogleDrive, getGoogleDriveFileInfo, syncAllLocalUploadsToDrive } from './services/googleDriveService.js';
 import User from './models/User.js';
+import CloudFile from './models/CloudFile.js';
 
 import compression from 'compression';
 
@@ -143,7 +144,7 @@ app.use(async (req, res, next) => {
 
 import { getUploadDirs, detectMimeType, detectFileExtension, findUploadedFile } from './services/uploadService.js';
 
-// Explicit image / document delivery and download with Google Drive Cloud fallback
+// Explicit image / document delivery and download with MongoDB CloudFile & Google Drive Cloud fallback
 app.get(['/uploads/:filename', '/api/installments/download/:filename'], async (req, res) => {
   const rawParam = req.params.filename || '';
   const filename = path.basename(rawParam);
@@ -178,7 +179,51 @@ app.get(['/uploads/:filename', '/api/installments/download/:filename'], async (r
     return res.sendFile(localFilePath);
   }
 
-  // 2. Google Drive Cloud Storage (200GB Permanent Zero Data Loss)
+  // 2. Permanent MongoDB CloudFile Storage (Zero-Config, Never Expires on Vercel)
+  try {
+    let chunks = await CloudFile.find({ filename }).sort({ chunkIndex: 1 }).lean();
+    if (!chunks || chunks.length === 0) {
+      const baseName = filename.replace(/\.[^/.]+$/, '');
+      const escaped = baseName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      chunks = await CloudFile.find({ filename: { $regex: new RegExp(`^${escaped}(\\.|$)`, 'i') } }).sort({ chunkIndex: 1 }).lean();
+    }
+    if (chunks && chunks.length > 0) {
+      const buffers = chunks.map(c => {
+        if (Buffer.isBuffer(c.data)) return c.data;
+        if (c.data && c.data.buffer) return Buffer.from(c.data.buffer);
+        if (typeof c.data === 'string') return Buffer.from(c.data, 'base64');
+        return Buffer.from(c.data || []);
+      });
+      const fullBuffer = Buffer.concat(buffers);
+      const storedName = chunks[0].filename || filename;
+      const realExt = detectFileExtension('', storedName);
+      const mimeType = (chunks[0].mimeType && chunks[0].mimeType !== 'application/octet-stream')
+        ? chunks[0].mimeType
+        : detectMimeType('', storedName);
+
+      res.setHeader('Content-Type', mimeType);
+      res.setHeader('Cache-Control', 'public, max-age=86400');
+
+      const isDownload = req.query.download === '1' || req.query.download === 'true' || req.path.includes('/download/');
+      if (isDownload) {
+        let titleBase = req.query.title ? String(req.query.title).trim() : path.basename(storedName);
+        titleBase = titleBase.replace(/\.[^/.]+$/, '').trim();
+        if (!titleBase) titleBase = 'document';
+
+        const downloadFilename = `${titleBase}${realExt}`;
+        const safeAscii = downloadFilename.replace(/[^\x20-\x7E]/g, '_').replace(/["\\]/g, '_');
+        res.setHeader('Content-Disposition', `attachment; filename="${safeAscii}"; filename*=UTF-8''${encodeURIComponent(downloadFilename)}`);
+      } else {
+        res.setHeader('Content-Disposition', `inline; filename="${encodeURIComponent(storedName)}"`);
+      }
+
+      return res.send(fullBuffer);
+    }
+  } catch (cloudDbErr) {
+    console.warn(`CloudFile lookup notice for ${filename}:`, cloudDbErr.message);
+  }
+
+  // 3. Google Drive Cloud Storage (200GB Permanent Zero Data Loss)
   try {
     const driveInfo = await getGoogleDriveFileInfo(filename);
     if (driveInfo) {
@@ -219,7 +264,7 @@ app.get(['/uploads/:filename', '/api/installments/download/:filename'], async (r
     console.warn(`Drive stream notice for ${filename}:`, driveErr.message);
   }
 
-  // 3. File not found
+  // 4. File not found
   const isDownload = req.query.download === '1' || req.query.download === 'true' || req.path.includes('/download/');
   if (isDownload) {
     return res.status(404).send('Document not found on cloud storage.');

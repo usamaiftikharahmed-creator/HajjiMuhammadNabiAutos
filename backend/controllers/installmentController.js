@@ -5,6 +5,7 @@ import Customer from '../models/Customer.js';
 import InstallmentSale from '../models/InstallmentSale.js';
 import Payment from '../models/Payment.js';
 import User from '../models/User.js';
+import CloudFile from '../models/CloudFile.js';
 import jwt from 'jsonwebtoken';
 import { logActivity } from '../utils/logger.js';
 import { invalidateDashboardCache } from '../routes/dashboardRoutes.js';
@@ -29,6 +30,33 @@ export const invalidateSalesCache = () => {
 
 // Helper to safely extract and trim string from single or array/multer inputs
 const cleanStr = (val) => String(Array.isArray(val) ? (val[0] ?? '') : (val ?? '')).trim();
+
+// Helper to permanently save a file from disk into MongoDB CloudFile chunks (2MB per chunk)
+const saveFileToCloudDB = async (filePath, filename, mimeType = 'application/octet-stream', customerId = '') => {
+  try {
+    if (!filePath || !fs.existsSync(filePath) || !filename) return false;
+    const buffer = await fs.promises.readFile(filePath);
+    const CHUNK_SIZE = 2 * 1024 * 1024; // 2MB per chunk (well below MongoDB 16MB doc limit)
+    const totalChunks = Math.max(1, Math.ceil(buffer.length / CHUNK_SIZE));
+    await CloudFile.deleteMany({ filename });
+    for (let i = 0; i < totalChunks; i++) {
+      const slice = buffer.subarray(i * CHUNK_SIZE, Math.min(buffer.length, (i + 1) * CHUNK_SIZE));
+      await CloudFile.create({
+        filename,
+        chunkIndex: i,
+        totalChunks,
+        mimeType: mimeType || 'application/octet-stream',
+        size: buffer.length,
+        customerId: String(customerId || ''),
+        data: slice
+      });
+    }
+    return true;
+  } catch (err) {
+    console.warn('saveFileToCloudDB notice:', err.message);
+    return false;
+  }
+};
 
 // Helper to parse "Nov 2025" / "Dec 2025" into a comparable timestamp
 const parseForMonthTimestamp = (forMonth) => {
@@ -207,6 +235,7 @@ export const createInstallmentSale = async (req, res) => {
 
     if (req.files && Array.isArray(req.files)) {
       for (const file of req.files) {
+        await saveFileToCloudDB(file.path, file.filename, file.mimetype, customerContext.customerId);
         let driveResult = null;
         try {
           driveResult = await uploadToGoogleDrive(file.path, file.filename, null, customerContext);
@@ -816,6 +845,7 @@ export const updateCustomer = async (req, res) => {
     const customerContext = { customerId: existingCust?.customerId, customerName: existingCust?.name || name };
 
     if (picFile) {
+      await saveFileToCloudDB(picFile.path, picFile.filename, picFile.mimetype, customerContext.customerId);
       let driveResult = null;
       try {
         driveResult = await uploadToGoogleDrive(picFile.path, picFile.filename, null, customerContext);
@@ -883,6 +913,7 @@ export const uploadCustomerPhoto = async (req, res) => {
     if (file) {
       const existingCust = await Customer.findById(id);
       const customerContext = { customerId: existingCust?.customerId, customerName: existingCust?.name };
+      await saveFileToCloudDB(file.path, file.filename, file.mimetype, customerContext.customerId);
       let driveResult = null;
       try {
         driveResult = await uploadToGoogleDrive(file.path, file.filename, null, customerContext);
@@ -1101,6 +1132,7 @@ export const uploadSaleDocuments = async (req, res) => {
     const newDocuments = [];
     for (let idx = 0; idx < req.files.length; idx++) {
       const file = req.files[idx];
+      await saveFileToCloudDB(file.path, file.filename, file.mimetype, customerContext.customerId);
       let driveResult = null;
       try {
         driveResult = await uploadToGoogleDrive(file.path, file.filename, null, customerContext);
@@ -1171,7 +1203,7 @@ export const uploadSaleDocuments = async (req, res) => {
   }
 };
 
-// 6a-1. Initialize Direct Google Drive Upload Session (Bypasses Vercel 4.5MB Payload Limit)
+// 6a-1. Initialize Direct Google Drive or Chunked Cloud DB Upload Session (Bypasses Vercel 4.5MB Payload Limit)
 export const initDirectSaleDocumentUpload = async (req, res) => {
   try {
     const { id } = req.params;
@@ -1220,17 +1252,30 @@ export const initDirectSaleDocumentUpload = async (req, res) => {
     }
     const cleanFilename = `${uniqueSuffix}${ext}`;
 
-    const origin = req.headers.origin || req.headers.referer || '*';
-    const session = await createResumableDriveUploadSession(
-      cleanFilename,
-      fileType || 'application/octet-stream',
-      customerContext,
-      origin
-    );
+    // Try Google Drive Resumable Session first; if Drive OAuth token is expired or unavailable,
+    // gracefully return CHUNKED_DB mode (200 OK — never 500!) so the client streams chunks into MongoDB CloudFile!
+    let uploadUrl = null;
+    let uploadMode = 'CHUNKED_DB';
+    try {
+      const origin = req.headers.origin || req.headers.referer || '*';
+      const session = await createResumableDriveUploadSession(
+        cleanFilename,
+        fileType || 'application/octet-stream',
+        customerContext,
+        origin
+      );
+      if (session?.uploadUrl) {
+        uploadUrl = session.uploadUrl;
+        uploadMode = 'GOOGLE_DRIVE';
+      }
+    } catch (driveSessionErr) {
+      console.warn('Google Drive session unavailable, using CHUNKED_DB cloud storage:', driveSessionErr.message);
+    }
 
     return res.json({
       success: true,
-      uploadUrl: session.uploadUrl,
+      uploadMode,
+      uploadUrl,
       cleanFilename,
       saleId: sale._id
     });
@@ -1240,15 +1285,62 @@ export const initDirectSaleDocumentUpload = async (req, res) => {
   }
 };
 
-// 6a-2. Confirm Direct Google Drive Upload and Link Document into Sale Record
+// 6a-1b. Receive a 1.5MB File Chunk into MongoDB CloudFile (Supports 25MB-50MB PDFs on Vercel Serverless with Zero 413 Errors)
+export const uploadSaleDocumentChunk = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { cleanFilename, chunkIndex, totalChunks, fileType, fileSize, chunkBase64 } = req.body;
+
+    if (!cleanFilename || chunkBase64 === undefined) {
+      return res.status(400).json({ success: false, message: 'cleanFilename and chunkBase64 are required' });
+    }
+
+    const buffer = Buffer.from(chunkBase64, 'base64');
+    const idx = Number(chunkIndex) || 0;
+    const total = Number(totalChunks) || 1;
+
+    if (idx === 0) {
+      await CloudFile.deleteMany({ filename: cleanFilename });
+    }
+
+    await CloudFile.findOneAndUpdate(
+      { filename: cleanFilename, chunkIndex: idx },
+      {
+        $set: {
+          filename: cleanFilename,
+          chunkIndex: idx,
+          totalChunks: total,
+          mimeType: fileType || 'application/octet-stream',
+          size: Number(fileSize) || buffer.length,
+          customerId: String(id || ''),
+          data: buffer
+        }
+      },
+      { upsert: true, new: true }
+    );
+
+    return res.json({
+      success: true,
+      cleanFilename,
+      chunkIndex: idx,
+      totalChunks: total
+    });
+  } catch (error) {
+    console.error('uploadSaleDocumentChunk error:', error);
+    return res.status(500).json({ success: false, message: error.message || 'Failed to store file chunk' });
+  }
+};
+
+// 6a-2. Confirm Direct Google Drive or Chunked Cloud DB Upload and Link Document into Sale Record
 export const confirmDirectSaleDocumentUpload = async (req, res) => {
   try {
     const { id } = req.params;
     const { driveFileId, cleanFilename, title, fileSize, fileType, field } = req.body;
 
-    if (!driveFileId || !cleanFilename) {
-      return res.status(400).json({ success: false, message: 'driveFileId and cleanFilename are required' });
+    if (!cleanFilename) {
+      return res.status(400).json({ success: false, message: 'cleanFilename is required' });
     }
+    const resolvedDriveId = driveFileId || `db:${cleanFilename}`;
 
     let sale = null;
     if (id && mongoose.Types.ObjectId.isValid(id)) {
@@ -1268,11 +1360,13 @@ export const confirmDirectSaleDocumentUpload = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Installment account not found' });
     }
 
-    // Register with in-memory cache and ensure public read permissions
-    try {
-      await registerUploadedDriveFile(driveFileId, cleanFilename, fileType, fileSize);
-    } catch (regErr) {
-      console.warn('registerUploadedDriveFile notice:', regErr.message);
+    // Register with in-memory cache and ensure public read permissions if uploaded to Google Drive
+    if (resolvedDriveId && !String(resolvedDriveId).startsWith('db:')) {
+      try {
+        await registerUploadedDriveFile(resolvedDriveId, cleanFilename, fileType, fileSize);
+      } catch (regErr) {
+        console.warn('registerUploadedDriveFile notice:', regErr.message);
+      }
     }
 
     const targetSale = await InstallmentSale.findById(sale._id);
@@ -1303,7 +1397,7 @@ export const confirmDirectSaleDocumentUpload = async (req, res) => {
       const newDoc = {
         title: docTitle,
         fileUrl,
-        driveFileId,
+        driveFileId: resolvedDriveId,
         createdAt: new Date()
       };
 
@@ -1373,6 +1467,7 @@ export const deleteSaleDocument = async (req, res) => {
       }
       if (docToDelete.fileUrl) {
         const filenameToDelete = path.basename(docToDelete.fileUrl);
+        await CloudFile.deleteMany({ filename: filenameToDelete }).catch(() => {});
         // Delete directly from 200GB Google Drive uploads folder
         try {
           await deleteFromGoogleDrive(filenameToDelete);

@@ -7,6 +7,7 @@ import {
 import API from '../api/axios';
 import toast from 'react-hot-toast';
 import { compressImage } from '../utils/imageCompressor';
+import { uploadSaleDocumentReliably } from '../utils/cloudUploadHelper';
 
 export default function AddInstallmentModal({ onClose, onSuccess }) {
   const [loading, setLoading] = useState(false);
@@ -533,63 +534,18 @@ export default function AddInstallmentModal({ onClose, onSuccess }) {
           const sizeMb = (file.size / (1024 * 1024)).toFixed(1);
           toast.loading(`Uploading (${i + 1}/${uploadQueue.length}): "${item.title}" (${sizeMb} MB)...`, { id: toastId });
 
-          let uploaded = false;
-
-          // Method A: Direct Browser -> Google Drive Resumable Upload (Supports 10MB, 25MB, 50MB+ PDFs/Files)
           try {
-            const initRes = await API.post(`/installments/sales/${createdSaleId}/documents/init-direct`, {
-              fileName: file.name || `${item.field || 'doc'}.jpg`,
-              fileType: file.type || 'application/octet-stream',
-              fileSize: file.size,
-              title: item.title
+            await uploadSaleDocumentReliably({
+              saleId: createdSaleId,
+              file,
+              title: item.title,
+              field: item.field,
+              onProgress: (pct) => {
+                toast.loading(`Uploading (${i + 1}/${uploadQueue.length}): "${item.title}" (${sizeMb} MB) — ${pct}%...`, { id: toastId });
+              }
             });
-
-            if (initRes.data?.success && initRes.data?.uploadUrl) {
-              const { uploadUrl, cleanFilename } = initRes.data;
-              const driveRes = await fetch(uploadUrl, {
-                method: 'PUT',
-                headers: {
-                  'Content-Type': file.type || 'application/octet-stream'
-                },
-                body: file
-              });
-
-              if (driveRes.ok) {
-                const driveJson = await driveRes.json();
-                if (driveJson?.id) {
-                  const confirmRes = await API.post(`/installments/sales/${createdSaleId}/documents/confirm-direct`, {
-                    driveFileId: driveJson.id,
-                    cleanFilename,
-                    title: item.title,
-                    fileSize: file.size,
-                    fileType: file.type || 'application/octet-stream',
-                    field: item.field
-                  });
-                  if (confirmRes.data?.success) {
-                    uploaded = true;
-                  }
-                }
-              }
-            }
-          } catch (directErr) {
-            console.warn('Direct Drive upload fallback triggered:', directErr.message);
-          }
-
-          // Method B: Single-file Multipart Fallback (for compressed images < 4MB)
-          if (!uploaded && file.size < 4 * 1024 * 1024) {
-            try {
-              const singleForm = new FormData();
-              singleForm.append('documents', file);
-              singleForm.append('docTitle_0', item.title);
-              singleForm.append('title', item.title);
-              if (item.field) {
-                singleForm.append('field', item.field);
-              }
-              await API.post(`/installments/sales/${createdSaleId}/documents`, singleForm);
-              uploaded = true;
-            } catch (fallbackErr) {
-              console.warn('Single file fallback error:', fallbackErr.message);
-            }
+          } catch (uploadErr) {
+            console.warn(`Upload notice for "${item.title}":`, uploadErr.message);
           }
         }
       }
