@@ -30,6 +30,47 @@ export const invalidateSalesCache = () => {
 // Helper to safely extract and trim string from single or array/multer inputs
 const cleanStr = (val) => String(Array.isArray(val) ? (val[0] ?? '') : (val ?? '')).trim();
 
+// Helper to parse "Nov 2025" / "Dec 2025" into a comparable timestamp
+const parseForMonthTimestamp = (forMonth) => {
+  if (!forMonth || typeof forMonth !== 'string') return Number.MAX_SAFE_INTEGER;
+  const parsed = Date.parse(`1 ${forMonth.trim()}`);
+  return isNaN(parsed) ? Number.MAX_SAFE_INTEGER : parsed;
+};
+
+// Sort payments so Advance Payment is ALWAYS first, followed by 1st, 2nd, 3rd installments in chronological order
+const sortPaymentsSequence = (list = []) => {
+  return [...list].sort((a, b) => {
+    const aMonthStr = String(a?.forMonth || '').trim().toLowerCase();
+    const bMonthStr = String(b?.forMonth || '').trim().toLowerCase();
+    const aIsAdv = aMonthStr === 'advance payment' || !aMonthStr || aMonthStr === '-';
+    const bIsAdv = bMonthStr === 'advance payment' || !bMonthStr || bMonthStr === '-';
+
+    if (aIsAdv && !bIsAdv) return -1;
+    if (!aIsAdv && bIsAdv) return 1;
+
+    // Next compare by payment date (oldest to newest)
+    const aDate = a?.createdAt ? new Date(a.createdAt).getTime() : 0;
+    const bDate = b?.createdAt ? new Date(b.createdAt).getTime() : 0;
+    const aDay = new Date(aDate).setHours(0, 0, 0, 0);
+    const bDay = new Date(bDate).setHours(0, 0, 0, 0);
+
+    // Also compare by target kist month (e.g., Nov 2025 before Dec 2025)
+    const aMonthTs = parseForMonthTimestamp(a?.forMonth);
+    const bMonthTs = parseForMonthTimestamp(b?.forMonth);
+
+    if (aDay !== bDay) {
+      return aDay - bDay;
+    }
+    if (aMonthTs !== bMonthTs) {
+      return aMonthTs - bMonthTs;
+    }
+    if (aDate !== bDate) {
+      return aDate - bDate;
+    }
+    return String(a?._id || '').localeCompare(String(b?._id || ''));
+  });
+};
+
 // Helper to resolve logged-in user from req.user or JWT token (falls back to Admin/Owner)
 const resolveReqUser = async (req) => {
   if (req?.user?._id) return req.user;
@@ -547,15 +588,16 @@ export const fetchSalesFromDB = async () => {
     }
   ]);
 
-  // Ensure Advance Payment date always matches its Sale creation date
+  // Ensure Advance Payment date always matches its Sale creation date and sort sequence-wise (Advance -> 1st -> 2nd...)
   return rawSales.map(sale => {
-    if (Array.isArray(sale.payments) && sale.createdAt) {
-      sale.payments = sale.payments.map(p => {
-        if (String(p.forMonth || '').toLowerCase() === 'advance payment') {
+    if (Array.isArray(sale.payments)) {
+      const mapped = sale.payments.map(p => {
+        if (sale.createdAt && String(p.forMonth || '').toLowerCase() === 'advance payment') {
           return { ...p, createdAt: sale.createdAt };
         }
         return p;
       });
+      sale.payments = sortPaymentsSequence(mapped);
     }
     return sale;
   });
@@ -664,16 +706,18 @@ export const getCustomerLedger = async (req, res) => {
     rawInstallmentSales.forEach(s => {
       if (s._id && s.createdAt) saleDateMap.set(String(s._id), s.createdAt);
     });
-    const payments = rawPayments.map(p => {
-      if (String(p.forMonth || '').toLowerCase() === 'advance payment') {
-        const sId = String(p.installmentSale?._id || p.installmentSale || '');
-        const sDate = p.installmentSale?.createdAt || saleDateMap.get(sId);
-        if (sDate) {
-          return { ...p, createdAt: sDate };
+    const payments = sortPaymentsSequence(
+      rawPayments.map(p => {
+        if (String(p.forMonth || '').toLowerCase() === 'advance payment') {
+          const sId = String(p.installmentSale?._id || p.installmentSale || '');
+          const sDate = p.installmentSale?.createdAt || saleDateMap.get(sId);
+          if (sDate) {
+            return { ...p, createdAt: sDate };
+          }
         }
-      }
-      return p;
-    });
+        return p;
+      })
+    );
 
     // Attach each sale's payments array onto the sale object so QuickPaymentModal & OverdueAlert have 100% schedule accuracy
     const installmentSales = rawInstallmentSales.map(s => {

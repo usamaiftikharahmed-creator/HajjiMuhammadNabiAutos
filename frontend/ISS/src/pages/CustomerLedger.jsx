@@ -900,17 +900,45 @@ export default function CustomerLedger() {
     window.open(`https://wa.me/${rawPhone}?text=${encodeURIComponent(message)}`, '_blank');
   };
 
-  const filteredPayments = (Array.isArray(ledgerData?.payments) ? ledgerData.payments : []).filter(payment => {
-    const payDate = new Date(payment.createdAt);
-    if (startDate && payDate < new Date(startDate)) return false;
-    if (endDate && payDate > new Date(endDate + 'T23:59:59')) return false;
+  const filteredPayments = (Array.isArray(ledgerData?.payments) ? ledgerData.payments : [])
+    .filter(payment => {
+      const payDate = new Date(payment.createdAt);
+      if (startDate && payDate < new Date(startDate)) return false;
+      if (endDate && payDate > new Date(endDate + 'T23:59:59')) return false;
 
-    const isAdvance = payment.forMonth?.toLowerCase().includes('advance') || payment.notes?.toLowerCase().includes('advance');
-    if (filterType === 'ADVANCE' && !isAdvance) return false;
-    if (filterType === 'INSTALLMENT' && isAdvance) return false;
+      const isAdvance = payment.forMonth?.toLowerCase().includes('advance') || payment.notes?.toLowerCase().includes('advance');
+      if (filterType === 'ADVANCE' && !isAdvance) return false;
+      if (filterType === 'INSTALLMENT' && isAdvance) return false;
 
-    return true;
-  }) || [];
+      return true;
+    })
+    .sort((a, b) => {
+      const aMonthStr = String(a?.forMonth || '').trim().toLowerCase();
+      const bMonthStr = String(b?.forMonth || '').trim().toLowerCase();
+      const aIsAdv = aMonthStr === 'advance payment' || !aMonthStr || aMonthStr === '-';
+      const bIsAdv = bMonthStr === 'advance payment' || !bMonthStr || bMonthStr === '-';
+
+      if (aIsAdv && !bIsAdv) return -1;
+      if (!aIsAdv && bIsAdv) return 1;
+
+      const aDate = a?.createdAt ? new Date(a.createdAt).getTime() : 0;
+      const bDate = b?.createdAt ? new Date(b.createdAt).getTime() : 0;
+      const aDay = new Date(aDate).setHours(0, 0, 0, 0);
+      const bDay = new Date(bDate).setHours(0, 0, 0, 0);
+
+      const parseMonth = (m) => {
+        if (!m || typeof m !== 'string') return Number.MAX_SAFE_INTEGER;
+        const p = Date.parse(`1 ${m.trim()}`);
+        return isNaN(p) ? Number.MAX_SAFE_INTEGER : p;
+      };
+      const aMonthTs = parseMonth(a?.forMonth);
+      const bMonthTs = parseMonth(b?.forMonth);
+
+      if (aDay !== bDay) return aDay - bDay;
+      if (aMonthTs !== bMonthTs) return aMonthTs - bMonthTs;
+      if (aDate !== bDate) return aDate - bDate;
+      return String(a?._id || '').localeCompare(String(b?._id || ''));
+    });
 
   return (
     <div className="space-y-6 text-white p-2 sm:p-4 max-w-7xl mx-auto print:p-0 print:m-0 print:w-full">

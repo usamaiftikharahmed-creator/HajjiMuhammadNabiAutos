@@ -563,7 +563,7 @@ export default function ViewDetailsModal({ selectedSale, onClose, onRefresh, onO
                 </thead>
                 <tbody className="divide-y divide-slate-800/50 text-slate-300">
                   {selectedSale.payments && selectedSale.payments.length > 0 ? (
-                    selectedSale.payments.map((pay, idx) => {
+                    [...selectedSale.payments].sort((a, b) => { const aM = String(a?.forMonth || '').trim().toLowerCase(); const bM = String(b?.forMonth || '').trim().toLowerCase(); const aAdv = aM === 'advance payment' || !aM || aM === '-'; const bAdv = bM === 'advance payment' || !bM || bM === '-'; if (aAdv && !bAdv) return -1; if (!aAdv && bAdv) return 1; const aD = a?.createdAt ? new Date(a.createdAt).getTime() : 0; const bD = b?.createdAt ? new Date(b.createdAt).getTime() : 0; const aDay = new Date(aD).setHours(0, 0, 0, 0); const bDay = new Date(bD).setHours(0, 0, 0, 0); const pM = (m) => { const p = Date.parse(`1 ${String(m || '').trim()}`); return isNaN(p) ? Number.MAX_SAFE_INTEGER : p; }; if (aDay !== bDay) return aDay - bDay; const aMT = pM(a?.forMonth); const bMT = pM(b?.forMonth); if (aMT !== bMT) return aMT - bMT; return aD - bD; }).map((pay, idx) => {
                       const isAdvance = 
                         pay.forMonth?.toLowerCase().includes('advance') || 
                         pay.notes?.toLowerCase().includes('advance') ||
