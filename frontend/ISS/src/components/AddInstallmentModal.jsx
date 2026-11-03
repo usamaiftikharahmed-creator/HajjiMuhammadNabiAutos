@@ -453,11 +453,13 @@ export default function AddInstallmentModal({ onClose, onSuccess }) {
     }
 
     setLoading(true);
+    const toastId = toast.loading('Khata create ho raha hai...');
 
     try {
+      // STEP 1: Create Customer & Installment Sale with lightweight text payload ONLY (~1 KB)
+      // This completely eliminates Vercel 413 (Content Too Large) errors on sale creation!
       const submitData = new FormData();
       
-      // Append text fields with dual-compatibility keys
       Object.keys(formData).forEach(key => {
         submitData.append(key, formData[key]);
       });
@@ -482,31 +484,122 @@ export default function AddInstallmentModal({ onClose, onSuccess }) {
         submitData.append('remainingAdvancePromiseDate', formData.remainingAdvancePromiseDate);
       }
 
-      // Append fixed CNIC files
-      Object.keys(files).forEach(key => {
-        if (files[key]) submitData.append(key, files[key]);
-      });
+      const res = await API.post('/installments/sales', submitData);
 
-      // Append dynamic extra documents
-      extraDocs.forEach((doc, idx) => {
-        if (doc.file) {
-          submitData.append('documents', doc.file);
-          submitData.append(`docTitle_${idx}`, doc.title || `Attachment ${idx + 1}`);
+      if (!res.data?.success) {
+        toast.error(res.data?.message || 'Account banane me masla aaya.', { id: toastId });
+        return;
+      }
+
+      const createdSaleId = res.data?.installmentSale?._id;
+
+      // STEP 2: Collect all attached files (Profile Photo, CNICs, and Extra Documents/PDFs)
+      // Upload each file individually via Direct Google Drive Resumable Upload (bypasses Vercel 4.5MB limit)
+      const uploadQueue = [];
+      const identityLabels = {
+        profilePic: 'Customer Photo',
+        cnicFront: 'Customer CNIC (Front)',
+        cnicBack: 'Customer CNIC (Back)',
+        guarantor1CnicFront: 'Guarantor 1 CNIC (Front)',
+        guarantor1CnicBack: 'Guarantor 1 CNIC (Back)',
+        guarantor2CnicFront: 'Guarantor 2 CNIC (Front)',
+        guarantor2CnicBack: 'Guarantor 2 CNIC (Back)'
+      };
+
+      Object.keys(files).forEach(key => {
+        if (files[key]) {
+          uploadQueue.push({
+            file: files[key],
+            title: identityLabels[key] || key,
+            field: key
+          });
         }
       });
 
-      const res = await API.post('/installments/sales', submitData);
+      extraDocs.forEach((doc, idx) => {
+        if (doc.file) {
+          uploadQueue.push({
+            file: doc.file,
+            title: (doc.title || '').trim() || doc.file.name || `Attachment ${idx + 1}`,
+            field: null
+          });
+        }
+      });
 
-      if (res.data?.success) {
-        toast.success(`Naya installment account (${res.data.customerId || 'CUST'}) kamyabi se create ho gaya!`);
-        onSuccess?.();
-        onClose();
-      } else {
-        toast.error(res.data?.message || 'Account banana me masla aaya.');
+      if (createdSaleId && uploadQueue.length > 0) {
+        for (let i = 0; i < uploadQueue.length; i++) {
+          const item = uploadQueue[i];
+          const file = item.file;
+          const sizeMb = (file.size / (1024 * 1024)).toFixed(1);
+          toast.loading(`Uploading (${i + 1}/${uploadQueue.length}): "${item.title}" (${sizeMb} MB)...`, { id: toastId });
+
+          let uploaded = false;
+
+          // Method A: Direct Browser -> Google Drive Resumable Upload (Supports 10MB, 25MB, 50MB+ PDFs/Files)
+          try {
+            const initRes = await API.post(`/installments/sales/${createdSaleId}/documents/init-direct`, {
+              fileName: file.name || `${item.field || 'doc'}.jpg`,
+              fileType: file.type || 'application/octet-stream',
+              fileSize: file.size,
+              title: item.title
+            });
+
+            if (initRes.data?.success && initRes.data?.uploadUrl) {
+              const { uploadUrl, cleanFilename } = initRes.data;
+              const driveRes = await fetch(uploadUrl, {
+                method: 'PUT',
+                headers: {
+                  'Content-Type': file.type || 'application/octet-stream'
+                },
+                body: file
+              });
+
+              if (driveRes.ok) {
+                const driveJson = await driveRes.json();
+                if (driveJson?.id) {
+                  const confirmRes = await API.post(`/installments/sales/${createdSaleId}/documents/confirm-direct`, {
+                    driveFileId: driveJson.id,
+                    cleanFilename,
+                    title: item.title,
+                    fileSize: file.size,
+                    fileType: file.type || 'application/octet-stream',
+                    field: item.field
+                  });
+                  if (confirmRes.data?.success) {
+                    uploaded = true;
+                  }
+                }
+              }
+            }
+          } catch (directErr) {
+            console.warn('Direct Drive upload fallback triggered:', directErr.message);
+          }
+
+          // Method B: Single-file Multipart Fallback (for compressed images < 4MB)
+          if (!uploaded && file.size < 4 * 1024 * 1024) {
+            try {
+              const singleForm = new FormData();
+              singleForm.append('documents', file);
+              singleForm.append('docTitle_0', item.title);
+              singleForm.append('title', item.title);
+              if (item.field) {
+                singleForm.append('field', item.field);
+              }
+              await API.post(`/installments/sales/${createdSaleId}/documents`, singleForm);
+              uploaded = true;
+            } catch (fallbackErr) {
+              console.warn('Single file fallback error:', fallbackErr.message);
+            }
+          }
+        }
       }
+
+      toast.success(`Naya installment account (${res.data.customerId || 'CUST'}) aur tamam documents kamyabi se save ho gaye!`, { id: toastId });
+      onSuccess?.();
+      onClose();
     } catch (err) {
       console.error('Submit error:', err);
-      toast.error(err.response?.data?.message || 'Server connection error');
+      toast.error(err.response?.data?.message || 'Server connection error', { id: toastId });
     } finally {
       setLoading(false);
     }

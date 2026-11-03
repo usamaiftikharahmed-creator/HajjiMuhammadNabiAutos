@@ -30,9 +30,9 @@ export const compressImage = (file, options = {}) => {
     const maxHeight = options.maxHeight || 1600;
     const quality = options.quality !== undefined ? options.quality : 0.8;
     
-    // Maintain EXACT uploaded image format (PNG stays PNG, WEBP stays WEBP, JPEG stays JPEG)
+    // Convert large PNGs (>300KB) to JPEG so browser quality compression works and reduces 5MB-10MB PNGs to ~200KB
     const outputType = options.mimeType || (
-      fileType === 'image/png' ? 'image/png' :
+      (fileType === 'image/png' && file.size < 300 * 1024) ? 'image/png' :
       fileType === 'image/webp' ? 'image/webp' :
       'image/jpeg'
     );
@@ -65,6 +65,12 @@ export const compressImage = (file, options = {}) => {
           const ctx = canvas.getContext('2d');
           if (!ctx) {
             return resolve(file);
+          }
+
+          // Fill white background when converting transparent PNG to JPEG
+          if (outputType === 'image/jpeg') {
+            ctx.fillStyle = '#FFFFFF';
+            ctx.fillRect(0, 0, width, height);
           }
 
           // Draw image smoothly onto canvas

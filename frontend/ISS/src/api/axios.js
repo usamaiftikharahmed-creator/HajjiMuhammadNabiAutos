@@ -1,18 +1,22 @@
 import axios from 'axios';
 
-// When running locally on desktop (localhost, 127.0.0.1, or LAN), always route to local Express server (/api).
-// When explicitly configured via VITE_API_URL or hosted on cloud, route accordingly.
+// Always use same-origin '/api' on localhost, LAN, and *.vercel.app (where vercel.json rewrites /api/* with zero CORS).
 const getApiBaseUrl = () => {
+  if (typeof window !== 'undefined') {
+    const { hostname } = window.location;
+    if (
+      hostname === 'localhost' ||
+      hostname === '127.0.0.1' ||
+      hostname.startsWith('192.168.') ||
+      hostname.startsWith('10.') ||
+      hostname.endsWith('.vercel.app')
+    ) {
+      return '/api';
+    }
+  }
   if (import.meta.env.VITE_API_URL) {
     const raw = import.meta.env.VITE_API_URL;
     return raw.endsWith('/api') ? raw : `${raw.replace(/\/+$/, '')}/api`;
-  }
-  // If running in browser on localhost / desktop app:
-  if (typeof window !== 'undefined') {
-    const { hostname } = window.location;
-    if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname.startsWith('192.168.') || hostname.startsWith('10.')) {
-      return '/api';
-    }
   }
   return '/api';
 };

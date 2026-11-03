@@ -1125,10 +1125,30 @@ export const uploadSaleDocuments = async (req, res) => {
     if (!targetSale) {
       return res.status(404).json({ success: false, message: 'Installment account not found' });
     }
-    if (!targetSale.documents) targetSale.documents = [];
-    targetSale.documents.push(...newDocuments);
-    targetSale.markModified('documents');
-    await targetSale.save();
+
+    const identityFields = [
+      'profilePic',
+      'cnicFront',
+      'cnicBack',
+      'guarantor1CnicFront',
+      'guarantor1CnicBack',
+      'guarantor2CnicFront',
+      'guarantor2CnicBack'
+    ];
+    const requestedField = cleanStr(req.body.field);
+
+    if (requestedField && identityFields.includes(requestedField) && newDocuments.length > 0) {
+      targetSale[requestedField] = newDocuments[0].fileUrl;
+      await targetSale.save();
+      if (requestedField === 'profilePic' && targetSale.customer) {
+        await Customer.findByIdAndUpdate(targetSale.customer, { $set: { profilePic: newDocuments[0].fileUrl } }).catch(() => {});
+      }
+    } else {
+      if (!targetSale.documents) targetSale.documents = [];
+      targetSale.documents.push(...newDocuments);
+      targetSale.markModified('documents');
+      await targetSale.save();
+    }
 
     // Mirror to offlineDb JSON
     try {
@@ -1224,7 +1244,7 @@ export const initDirectSaleDocumentUpload = async (req, res) => {
 export const confirmDirectSaleDocumentUpload = async (req, res) => {
   try {
     const { id } = req.params;
-    const { driveFileId, cleanFilename, title, fileSize, fileType } = req.body;
+    const { driveFileId, cleanFilename, title, fileSize, fileType, field } = req.body;
 
     if (!driveFileId || !cleanFilename) {
       return res.status(400).json({ success: false, message: 'driveFileId and cleanFilename are required' });
@@ -1263,22 +1283,51 @@ export const confirmDirectSaleDocumentUpload = async (req, res) => {
     const docTitle = (title || '').trim() || cleanFilename || 'Document';
     const fileUrl = `/uploads/${cleanFilename}`;
 
-    const newDoc = {
-      title: docTitle,
-      fileUrl,
-      driveFileId,
-      createdAt: new Date()
-    };
+    const identityFields = [
+      'profilePic',
+      'cnicFront',
+      'cnicBack',
+      'guarantor1CnicFront',
+      'guarantor1CnicBack',
+      'guarantor2CnicFront',
+      'guarantor2CnicBack'
+    ];
 
-    if (!targetSale.documents) targetSale.documents = [];
-    targetSale.documents.push(newDoc);
-    targetSale.markModified('documents');
-    await targetSale.save();
+    if (field && identityFields.includes(field)) {
+      targetSale[field] = fileUrl;
+      await targetSale.save();
+      if (field === 'profilePic' && targetSale.customer) {
+        await Customer.findByIdAndUpdate(targetSale.customer, { $set: { profilePic: fileUrl } }).catch(() => {});
+      }
+    } else {
+      const newDoc = {
+        title: docTitle,
+        fileUrl,
+        driveFileId,
+        createdAt: new Date()
+      };
+
+      if (!targetSale.documents) targetSale.documents = [];
+      targetSale.documents.push(newDoc);
+      targetSale.markModified('documents');
+      await targetSale.save();
+    }
 
     // Mirror to offlineDb if local
     try {
       if (offlineDb?.installmentSales?.findByIdAndUpdate) {
-        offlineDb.installmentSales.findByIdAndUpdate(sale._id, { $set: { documents: targetSale.documents } }).catch(() => {});
+        offlineDb.installmentSales.findByIdAndUpdate(sale._id, {
+          $set: {
+            documents: targetSale.documents,
+            profilePic: targetSale.profilePic,
+            cnicFront: targetSale.cnicFront,
+            cnicBack: targetSale.cnicBack,
+            guarantor1CnicFront: targetSale.guarantor1CnicFront,
+            guarantor1CnicBack: targetSale.guarantor1CnicBack,
+            guarantor2CnicFront: targetSale.guarantor2CnicFront,
+            guarantor2CnicBack: targetSale.guarantor2CnicBack
+          }
+        }).catch(() => {});
       }
     } catch (e) {}
 
@@ -1288,7 +1337,8 @@ export const confirmDirectSaleDocumentUpload = async (req, res) => {
       success: true,
       message: 'Document saved and linked successfully',
       documents: targetSale.documents,
-      newDoc,
+      fileUrl,
+      field: field || 'documents',
       saleId: sale._id
     });
   } catch (error) {
