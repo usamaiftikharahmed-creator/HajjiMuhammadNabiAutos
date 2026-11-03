@@ -1,5 +1,6 @@
 import React from 'react';
 import { AlertTriangle, Clock, Calendar, CheckCircle2, ShieldAlert } from 'lucide-react';
+import { calculateInstallmentPlan } from '../utils/installmentSchedule';
 
 export default function OverdueAlert({ sales }) {
   if (!Array.isArray(sales) || sales.length === 0) return null;
@@ -7,15 +8,18 @@ export default function OverdueAlert({ sales }) {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
-  // Analyze each active sale for due dates
+  // Analyze each active sale for due dates using the same schedule engine as Recovery Center
   const statusSummary = sales
     .filter(s => s.status !== 'completed' && s.remainingBalance > 0)
     .map(sale => {
+      const plan = calculateInstallmentPlan(sale);
       const saleDate = new Date(sale.createdAt);
       
       // Calculate Next Due Date
-      // If backend provides nextDueDate, use it; otherwise compute based on purchase day
-      let nextDue = sale.nextDueDate ? new Date(sale.nextDueDate) : null;
+      // Prioritize oldest pending month from schedule (so cleared months are skipped)
+      let nextDue = plan?.oldestPendingMonth?.dueDate
+        ? new Date(plan.oldestPendingMonth.dueDate)
+        : (sale.nextDueDate ? new Date(sale.nextDueDate) : null);
 
       if (!nextDue) {
         const purchaseDay = saleDate.getDate();

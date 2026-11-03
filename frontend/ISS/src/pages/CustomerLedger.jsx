@@ -1453,7 +1453,11 @@ export default function CustomerLedger() {
                           <td className="p-3 font-black text-emerald-400 text-sm print:text-emerald-800">
                             Rs. {payment.amountPaid?.toLocaleString()}
                           </td>
-                          <td className="p-3 text-slate-400">{payment.receivedBy?.name || 'Staff'}</td>
+                          <td className="p-3 text-slate-300 font-semibold">
+                            {(payment.receivedBy?.username === 'admin' || payment.receivedBy?.name === 'System Owner')
+                              ? 'Admin'
+                              : (payment.receivedBy?.name || payment.receivedBy?.username || 'Admin')}
+                          </td>
                           <td className="p-3 text-slate-400 italic">{payment.notes || '-'}</td>
                           <td className="p-3 text-right print:hidden">
                             <div className="flex items-center justify-end gap-1.5">
@@ -2435,19 +2439,33 @@ export default function CustomerLedger() {
       )}
 
       {/* QUICK PAYMENT COLLECTION MODAL */}
-      {showQuickPay && ledgerData && (
-        <QuickPaymentModal
-          customer={ledgerData.customer || {}}
-          sales={Array.isArray(ledgerData.installmentSales) ? ledgerData.installmentSales : []}
-          activeSales={Array.isArray(ledgerData.installmentSales) ? ledgerData.installmentSales : []}
-          initialSaleId={quickPaySaleId}
-          onClose={() => {
-            setShowQuickPay(false);
-            setQuickPaySaleId('');
-          }}
-          onSuccess={() => handleSearch(null, ledgerData?.customer?.customerId || ledgerData?.customer?.phone || searchQuery)}
-        />
-      )}
+      {showQuickPay && ledgerData && (() => {
+        const enrichedSales = (Array.isArray(ledgerData.installmentSales) ? ledgerData.installmentSales : []).map(s => {
+          const sId = String(s._id || '');
+          const salePayments = Array.isArray(s.payments) && s.payments.length > 0
+            ? s.payments
+            : (Array.isArray(ledgerData.payments) ? ledgerData.payments : []).filter(
+                p => String(p.installmentSale?._id || p.installmentSale || '') === sId
+              );
+          return {
+            ...s,
+            payments: salePayments
+          };
+        });
+        return (
+          <QuickPaymentModal
+            customer={ledgerData.customer || {}}
+            sales={enrichedSales}
+            activeSales={enrichedSales}
+            initialSaleId={quickPaySaleId}
+            onClose={() => {
+              setShowQuickPay(false);
+              setQuickPaySaleId('');
+            }}
+            onSuccess={() => handleSearch(null, ledgerData?.customer?.customerId || ledgerData?.customer?.phone || searchQuery)}
+          />
+        );
+      })()}
 
       {/* RECEIPT MODAL */}
       {selectedPayment && selectedSaleForReceipt && (
