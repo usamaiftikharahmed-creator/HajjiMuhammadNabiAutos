@@ -67,8 +67,37 @@ const parseForMonthTimestamp = (forMonth) => {
 };
 
 // Sort payments so Advance Payment is ALWAYS first, followed by 1st, 2nd, 3rd installments in chronological order
+// Also merges any split batchId rows into 1 single combined entry
 const sortPaymentsSequence = (list = []) => {
-  return [...list].sort((a, b) => {
+  const seenBatches = new Map();
+  const mergedList = [];
+
+  for (const p of list) {
+    if (!p?.batchId) {
+      mergedList.push(p);
+      continue;
+    }
+    if (!seenBatches.has(p.batchId)) {
+      const clone = { ...p };
+      seenBatches.set(p.batchId, clone);
+      mergedList.push(clone);
+    } else {
+      const primary = seenBatches.get(p.batchId);
+      const breakdown = Array.isArray(primary.batchBreakdown) && primary.batchBreakdown.length > 1
+        ? primary.batchBreakdown
+        : [
+            { forMonth: primary.forMonth, amountPaid: Number(primary.amountPaid || 0) },
+            { forMonth: p.forMonth, amountPaid: Number(p.amountPaid || 0) }
+          ];
+      const total = primary.batchTotal || breakdown.reduce((s, b) => s + (Number(b.amountPaid) || 0), 0);
+      primary.amountPaid = total;
+      primary.batchTotal = total;
+      primary.batchBreakdown = breakdown;
+      primary.forMonth = breakdown.map(b => b.forMonth).join(', ');
+    }
+  }
+
+  return mergedList.sort((a, b) => {
     const aMonthStr = String(a?.forMonth || '').trim().toLowerCase();
     const bMonthStr = String(b?.forMonth || '').trim().toLowerCase();
     const aIsAdv = aMonthStr === 'advance payment' || !aMonthStr || aMonthStr === '-';
