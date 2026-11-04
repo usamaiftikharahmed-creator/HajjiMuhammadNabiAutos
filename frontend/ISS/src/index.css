@@ -1,2 +1,261 @@
 @import "tailwindcss";
 
+/* ==========================================================================
+   SYSTEM-WIDE LIGHT & DARK THEME ENGINE
+   Default: Dark Mode (html.dark-theme)
+   Light Mode: html.light-theme
+   Print Areas (#a4-print-area, #receipt-print-area) are strictly excluded
+   so receipts always print on crisp white paper in both modes.
+   ========================================================================== */
+
+html.light-theme {
+  color-scheme: light;
+  background-color: #f1f5f9;
+  color: #0f172a;
+}
+
+html.dark-theme {
+  color-scheme: dark;
+  background-color: #020617;
+  color: #f8fafc;
+}
+
+/* 1. PRIMARY & SECONDARY SURFACES */
+html.light-theme .bg-slate-950:not(#a4-print-area):not(#a4-print-area *):not(#receipt-print-area):not(#receipt-print-area *),
+html.light-theme [class*="bg-slate-950/"]:not(#a4-print-area):not(#a4-print-area *):not(#receipt-print-area):not(#receipt-print-area *) {
+  background-color: #f1f5f9 !important;
+}
+
+html.light-theme .bg-slate-900:not(#a4-print-area):not(#a4-print-area *):not(#receipt-print-area):not(#receipt-print-area *),
+html.light-theme [class*="bg-slate-900/"]:not(#a4-print-area):not(#a4-print-area *):not(#receipt-print-area):not(#receipt-print-area *) {
+  background-color: #ffffff !important;
+}
+
+html.light-theme .bg-slate-800:not(#a4-print-area):not(#a4-print-area *):not(#receipt-print-area):not(#receipt-print-area *),
+html.light-theme [class*="bg-slate-800/"]:not(#a4-print-area):not(#a4-print-area *):not(#receipt-print-area):not(#receipt-print-area *) {
+  background-color: #e2e8f0 !important;
+}
+
+html.light-theme .bg-slate-700:not(#a4-print-area):not(#a4-print-area *):not(#receipt-print-area):not(#receipt-print-area *),
+html.light-theme [class*="bg-slate-700/"]:not(#a4-print-area):not(#a4-print-area *):not(#receipt-print-area):not(#receipt-print-area *) {
+  background-color: #cbd5e1 !important;
+}
+
+/* Hover surfaces in Light Mode */
+html.light-theme [class*="hover:bg-slate-900"]:hover:not(#a4-print-area):not(#a4-print-area *):not(#receipt-print-area):not(#receipt-print-area *),
+html.light-theme [class*="hover:bg-slate-800"]:hover:not(#a4-print-area):not(#a4-print-area *):not(#receipt-print-area):not(#receipt-print-area *) {
+  background-color: #e2e8f0 !important;
+}
+
+html.light-theme [class*="hover:bg-slate-700"]:hover:not(#a4-print-area):not(#a4-print-area *):not(#receipt-print-area):not(#receipt-print-area *) {
+  background-color: #cbd5e1 !important;
+}
+
+/* 2. DARK GRADIENT PANELS -> LIGHT GRADIENT PANELS */
+html.light-theme [class*="from-slate-900"]:not(#a4-print-area):not(#a4-print-area *):not(#receipt-print-area):not(#receipt-print-area *),
+html.light-theme [class*="from-slate-950"]:not(#a4-print-area):not(#a4-print-area *):not(#receipt-print-area):not(#receipt-print-area *),
+html.light-theme [class*="from-indigo-950"]:not(#a4-print-area):not(#a4-print-area *):not(#receipt-print-area):not(#receipt-print-area *),
+html.light-theme [class*="from-blue-950"]:not(#a4-print-area):not(#a4-print-area *):not(#receipt-print-area):not(#receipt-print-area *) {
+  background-image: linear-gradient(135deg, #eff6ff 0%, #ffffff 55%, #f1f5f9 100%) !important;
+}
+
+html.light-theme [class*="from-emerald-950"]:not(#a4-print-area):not(#a4-print-area *):not(#receipt-print-area):not(#receipt-print-area *) {
+  background-image: linear-gradient(135deg, #ecfdf5 0%, #ffffff 100%) !important;
+}
+
+html.light-theme [class*="from-amber-950"]:not(#a4-print-area):not(#a4-print-area *):not(#receipt-print-area):not(#receipt-print-area *) {
+  background-image: linear-gradient(135deg, #fffbeb 0%, #ffffff 100%) !important;
+}
+
+html.light-theme [class*="from-rose-950"]:not(#a4-print-area):not(#a4-print-area *):not(#receipt-print-area):not(#receipt-print-area *),
+html.light-theme [class*="from-red-950"]:not(#a4-print-area):not(#a4-print-area *):not(#receipt-print-area):not(#receipt-print-area *) {
+  background-image: linear-gradient(135deg, #fff1f2 0%, #ffffff 100%) !important;
+}
+
+/* 3. DARK TINTED ALERTS, BADGES & BANNERS (*-950 / *-900) */
+html.light-theme [class*="bg-emerald-950"]:not(#a4-print-area):not(#a4-print-area *):not(#receipt-print-area):not(#receipt-print-area *),
+html.light-theme [class*="bg-emerald-900"]:not(#a4-print-area):not(#a4-print-area *):not(#receipt-print-area):not(#receipt-print-area *),
+html.light-theme [class*="bg-green-950"]:not(#a4-print-area):not(#a4-print-area *):not(#receipt-print-area):not(#receipt-print-area *),
+html.light-theme [class*="bg-green-900"]:not(#a4-print-area):not(#a4-print-area *):not(#receipt-print-area):not(#receipt-print-area *) {
+  background-color: #ecfdf5 !important;
+}
+
+html.light-theme [class*="bg-amber-950"]:not(#a4-print-area):not(#a4-print-area *):not(#receipt-print-area):not(#receipt-print-area *),
+html.light-theme [class*="bg-amber-900"]:not(#a4-print-area):not(#a4-print-area *):not(#receipt-print-area):not(#receipt-print-area *),
+html.light-theme [class*="bg-yellow-950"]:not(#a4-print-area):not(#a4-print-area *):not(#receipt-print-area):not(#receipt-print-area *),
+html.light-theme [class*="bg-orange-950"]:not(#a4-print-area):not(#a4-print-area *):not(#receipt-print-area):not(#receipt-print-area *) {
+  background-color: #fffbeb !important;
+}
+
+html.light-theme [class*="bg-red-950"]:not(#a4-print-area):not(#a4-print-area *):not(#receipt-print-area):not(#receipt-print-area *),
+html.light-theme [class*="bg-red-900"]:not(#a4-print-area):not(#a4-print-area *):not(#receipt-print-area):not(#receipt-print-area *),
+html.light-theme [class*="bg-rose-950"]:not(#a4-print-area):not(#a4-print-area *):not(#receipt-print-area):not(#receipt-print-area *),
+html.light-theme [class*="bg-rose-900"]:not(#a4-print-area):not(#a4-print-area *):not(#receipt-print-area):not(#receipt-print-area *) {
+  background-color: #fff1f2 !important;
+}
+
+html.light-theme [class*="bg-blue-950"]:not(#a4-print-area):not(#a4-print-area *):not(#receipt-print-area):not(#receipt-print-area *),
+html.light-theme [class*="bg-blue-900"]:not(#a4-print-area):not(#a4-print-area *):not(#receipt-print-area):not(#receipt-print-area *) {
+  background-color: #eff6ff !important;
+}
+
+html.light-theme [class*="bg-indigo-950"]:not(#a4-print-area):not(#a4-print-area *):not(#receipt-print-area):not(#receipt-print-area *),
+html.light-theme [class*="bg-indigo-900"]:not(#a4-print-area):not(#a4-print-area *):not(#receipt-print-area):not(#receipt-print-area *),
+html.light-theme [class*="bg-purple-950"]:not(#a4-print-area):not(#a4-print-area *):not(#receipt-print-area):not(#receipt-print-area *),
+html.light-theme [class*="bg-purple-900"]:not(#a4-print-area):not(#a4-print-area *):not(#receipt-print-area):not(#receipt-print-area *) {
+  background-color: #eef2ff !important;
+}
+
+html.light-theme [class*="bg-cyan-950"]:not(#a4-print-area):not(#a4-print-area *):not(#receipt-print-area):not(#receipt-print-area *),
+html.light-theme [class*="bg-cyan-900"]:not(#a4-print-area):not(#a4-print-area *):not(#receipt-print-area):not(#receipt-print-area *) {
+  background-color: #ecfeff !important;
+}
+
+/* 4. BORDERS & DIVIDERS */
+html.light-theme .border-slate-900:not(#a4-print-area):not(#a4-print-area *):not(#receipt-print-area):not(#receipt-print-area *),
+html.light-theme .border-slate-800:not(#a4-print-area):not(#a4-print-area *):not(#receipt-print-area):not(#receipt-print-area *),
+html.light-theme [class*="border-slate-800/"]:not(#a4-print-area):not(#a4-print-area *):not(#receipt-print-area):not(#receipt-print-area *),
+html.light-theme .border-slate-700:not(#a4-print-area):not(#a4-print-area *):not(#receipt-print-area):not(#receipt-print-area *),
+html.light-theme [class*="border-slate-700/"]:not(#a4-print-area):not(#a4-print-area *):not(#receipt-print-area):not(#receipt-print-area *) {
+  border-color: #cbd5e1 !important;
+}
+
+html.light-theme .divide-slate-800 > :not([hidden]) ~ :not([hidden]),
+html.light-theme .divide-slate-700 > :not([hidden]) ~ :not([hidden]) {
+  border-color: #e2e8f0 !important;
+}
+
+/* 5. TYPOGRAPHY & TEXT CONTRAST */
+html.light-theme .text-white:not(#a4-print-area):not(#a4-print-area *):not(#receipt-print-area):not(#receipt-print-area *),
+html.light-theme .text-slate-100:not(#a4-print-area):not(#a4-print-area *):not(#receipt-print-area):not(#receipt-print-area *),
+html.light-theme .text-slate-200:not(#a4-print-area):not(#a4-print-area *):not(#receipt-print-area):not(#receipt-print-area *) {
+  color: #0f172a !important;
+}
+
+html.light-theme .text-slate-300:not(#a4-print-area):not(#a4-print-area *):not(#receipt-print-area):not(#receipt-print-area *) {
+  color: #1e293b !important;
+}
+
+html.light-theme .text-slate-400:not(#a4-print-area):not(#a4-print-area *):not(#receipt-print-area):not(#receipt-print-area *) {
+  color: #475569 !important;
+}
+
+html.light-theme .text-slate-500:not(#a4-print-area):not(#a4-print-area *):not(#receipt-print-area):not(#receipt-print-area *) {
+  color: #64748b !important;
+}
+
+html.light-theme [class*="hover:text-white"]:hover:not(#a4-print-area):not(#a4-print-area *):not(#receipt-print-area):not(#receipt-print-area *) {
+  color: #0f172a !important;
+}
+
+/* 6. ACCENT TEXT CONTRAST ON LIGHT BACKGROUNDS */
+html.light-theme .text-emerald-400:not(#a4-print-area):not(#a4-print-area *):not(#receipt-print-area):not(#receipt-print-area *),
+html.light-theme .text-emerald-300:not(#a4-print-area):not(#a4-print-area *):not(#receipt-print-area):not(#receipt-print-area *),
+html.light-theme .text-emerald-200:not(#a4-print-area):not(#a4-print-area *):not(#receipt-print-area):not(#receipt-print-area *),
+html.light-theme .text-green-400:not(#a4-print-area):not(#a4-print-area *):not(#receipt-print-area):not(#receipt-print-area *),
+html.light-theme .text-green-300:not(#a4-print-area):not(#a4-print-area *):not(#receipt-print-area):not(#receipt-print-area *) {
+  color: #047857 !important;
+}
+
+html.light-theme .text-amber-400:not(#a4-print-area):not(#a4-print-area *):not(#receipt-print-area):not(#receipt-print-area *),
+html.light-theme .text-amber-300:not(#a4-print-area):not(#a4-print-area *):not(#receipt-print-area):not(#receipt-print-area *),
+html.light-theme .text-amber-200:not(#a4-print-area):not(#a4-print-area *):not(#receipt-print-area):not(#receipt-print-area *),
+html.light-theme .text-yellow-400:not(#a4-print-area):not(#a4-print-area *):not(#receipt-print-area):not(#receipt-print-area *),
+html.light-theme .text-orange-400:not(#a4-print-area):not(#a4-print-area *):not(#receipt-print-area):not(#receipt-print-area *) {
+  color: #b45309 !important;
+}
+
+html.light-theme .text-blue-400:not(#a4-print-area):not(#a4-print-area *):not(#receipt-print-area):not(#receipt-print-area *),
+html.light-theme .text-blue-300:not(#a4-print-area):not(#a4-print-area *):not(#receipt-print-area):not(#receipt-print-area *),
+html.light-theme .text-blue-200:not(#a4-print-area):not(#a4-print-area *):not(#receipt-print-area):not(#receipt-print-area *) {
+  color: #1d4ed8 !important;
+}
+
+html.light-theme .text-indigo-400:not(#a4-print-area):not(#a4-print-area *):not(#receipt-print-area):not(#receipt-print-area *),
+html.light-theme .text-indigo-300:not(#a4-print-area):not(#a4-print-area *):not(#receipt-print-area):not(#receipt-print-area *),
+html.light-theme .text-indigo-200:not(#a4-print-area):not(#a4-print-area *):not(#receipt-print-area):not(#receipt-print-area *) {
+  color: #4338ca !important;
+}
+
+html.light-theme .text-purple-400:not(#a4-print-area):not(#a4-print-area *):not(#receipt-print-area):not(#receipt-print-area *),
+html.light-theme .text-purple-300:not(#a4-print-area):not(#a4-print-area *):not(#receipt-print-area):not(#receipt-print-area *),
+html.light-theme .text-purple-200:not(#a4-print-area):not(#a4-print-area *):not(#receipt-print-area):not(#receipt-print-area *) {
+  color: #6d28d9 !important;
+}
+
+html.light-theme .text-red-400:not(#a4-print-area):not(#a4-print-area *):not(#receipt-print-area):not(#receipt-print-area *),
+html.light-theme .text-red-300:not(#a4-print-area):not(#a4-print-area *):not(#receipt-print-area):not(#receipt-print-area *),
+html.light-theme .text-red-200:not(#a4-print-area):not(#a4-print-area *):not(#receipt-print-area):not(#receipt-print-area *),
+html.light-theme .text-rose-400:not(#a4-print-area):not(#a4-print-area *):not(#receipt-print-area):not(#receipt-print-area *),
+html.light-theme .text-rose-300:not(#a4-print-area):not(#a4-print-area *):not(#receipt-print-area):not(#receipt-print-area *),
+html.light-theme .text-rose-200:not(#a4-print-area):not(#a4-print-area *):not(#receipt-print-area):not(#receipt-print-area *) {
+  color: #be123c !important;
+}
+
+html.light-theme .text-cyan-400:not(#a4-print-area):not(#a4-print-area *):not(#receipt-print-area):not(#receipt-print-area *),
+html.light-theme .text-cyan-300:not(#a4-print-area):not(#a4-print-area *):not(#receipt-print-area):not(#receipt-print-area *),
+html.light-theme .text-cyan-200:not(#a4-print-area):not(#a4-print-area *):not(#receipt-print-area):not(#receipt-print-area *) {
+  color: #0e7490 !important;
+}
+
+/* 7. PRESERVE WHITE TEXT ON SOLID VIBRANT BUTTONS & BADGES */
+html.light-theme .bg-blue-600,
+html.light-theme .bg-blue-600 *,
+html.light-theme .bg-blue-500,
+html.light-theme .bg-blue-500 *,
+html.light-theme .bg-emerald-600,
+html.light-theme .bg-emerald-600 *,
+html.light-theme .bg-emerald-500,
+html.light-theme .bg-emerald-500 *,
+html.light-theme .bg-green-600,
+html.light-theme .bg-green-600 *,
+html.light-theme .bg-green-500,
+html.light-theme .bg-green-500 *,
+html.light-theme .bg-red-600,
+html.light-theme .bg-red-600 *,
+html.light-theme .bg-red-500,
+html.light-theme .bg-red-500 *,
+html.light-theme .bg-rose-600,
+html.light-theme .bg-rose-600 *,
+html.light-theme .bg-rose-500,
+html.light-theme .bg-rose-500 *,
+html.light-theme .bg-indigo-600,
+html.light-theme .bg-indigo-600 *,
+html.light-theme .bg-indigo-500,
+html.light-theme .bg-indigo-500 *,
+html.light-theme .bg-purple-600,
+html.light-theme .bg-purple-600 *,
+html.light-theme .bg-purple-500,
+html.light-theme .bg-purple-500 *,
+html.light-theme .bg-amber-600,
+html.light-theme .bg-amber-600 *,
+html.light-theme .bg-amber-500,
+html.light-theme .bg-amber-500 *,
+html.light-theme .bg-orange-600,
+html.light-theme .bg-orange-600 *,
+html.light-theme .bg-cyan-600,
+html.light-theme .bg-cyan-600 * {
+  color: #ffffff !important;
+}
+
+/* 8. FORM INPUTS, SELECT DROPDOWNS, TEXTAREAS & NATIVE PICKERS */
+html.light-theme input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not(#a4-print-area *):not(#receipt-print-area *),
+html.light-theme select:not(#a4-print-area *):not(#receipt-print-area *),
+html.light-theme textarea:not(#a4-print-area *):not(#receipt-print-area *),
+html.light-theme option {
+  background-color: #ffffff !important;
+  color: #0f172a !important;
+  border-color: #cbd5e1 !important;
+  color-scheme: light !important;
+}
+
+html.light-theme input:not(#a4-print-area *):not(#receipt-print-area *)::placeholder,
+html.light-theme textarea:not(#a4-print-area *):not(#receipt-print-area *)::placeholder {
+  color: #94a3b8 !important;
+}
+
+html.light-theme input:not([type="checkbox"]):not([type="radio"]):focus:not(#a4-print-area *):not(#receipt-print-area *),
+html.light-theme select:focus:not(#a4-print-area *):not(#receipt-print-area *),
+html.light-theme textarea:focus:not(#a4-print-area *):not(#receipt-print-area *) {
+  border-color: #2563eb !important;
+}

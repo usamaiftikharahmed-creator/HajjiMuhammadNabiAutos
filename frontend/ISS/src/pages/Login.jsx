@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { Lock, User, ShieldCheck, Store, ArrowRight } from 'lucide-react';
+import { useTheme } from '../context/ThemeContext';
+import { Lock, User, ShieldCheck, Store, ArrowRight, Sun, Moon } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 export default function Login() {
@@ -11,6 +12,7 @@ export default function Login() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   
   const { login, user } = useAuth();
+  const { theme, toggleTheme } = useTheme();
   const navigate = useNavigate();
 
   // 🔄 Auto Redirect agar user logged in ho jaye
@@ -41,7 +43,26 @@ export default function Login() {
   };
 
   return (
-    <div className="min-h-screen w-full flex bg-slate-950 text-slate-100">
+    <div className="min-h-screen w-full flex bg-slate-950 text-slate-100 relative">
+      {/* Floating Theme Toggle on Login Page */}
+      <button
+        type="button"
+        onClick={toggleTheme}
+        className="fixed top-5 right-5 z-50 flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-semibold transition cursor-pointer shadow-md"
+      >
+        {theme === 'dark' ? (
+          <>
+            <Sun className="w-4 h-4 text-amber-400" />
+            <span>Light Mode</span>
+          </>
+        ) : (
+          <>
+            <Moon className="w-4 h-4 text-indigo-400" />
+            <span>Dark Mode</span>
+          </>
+        )}
+      </button>
+
       {/* Left Panel */}
       <div className="hidden lg:flex lg:w-1/2 bg-gradient-to-br from-slate-900 via-blue-950 to-slate-950 p-12 flex-col justify-between relative overflow-hidden border-r border-slate-800">
         <div className="flex items-center gap-3 z-10">

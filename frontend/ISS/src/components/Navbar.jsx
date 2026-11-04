@@ -1,11 +1,13 @@
 import { useState, useEffect } from 'react';
 import API from '../api/axios';
-import { Menu, LogOut, ShieldCheck, Cloud, Zap } from 'lucide-react';
+import { Menu, LogOut, ShieldCheck, Cloud, Zap, Sun, Moon } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { useTheme } from '../context/ThemeContext';
 import AdminDueNotifications from './AdminDueNotifications';
 
 export default function Navbar({ onToggleSidebar, onNavigateRecovery, onNavigateAll }) {
   const { user, logout } = useAuth();
+  const { theme, toggleTheme } = useTheme();
   const [systemStatus, setSystemStatus] = useState({ 
     mode: 'online', 
     statusMessage: 'Google Drive & Cloud Synced' 
@@ -66,7 +68,26 @@ export default function Navbar({ onToggleSidebar, onNavigateRecovery, onNavigate
         )}
       </div>
 
-      <div className="flex items-center gap-3 sm:gap-4">
+      <div className="flex items-center gap-2.5 sm:gap-4">
+        {/* Light / Dark Mode Switch */}
+        <button
+          onClick={toggleTheme}
+          title={theme === 'dark' ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-semibold transition cursor-pointer shadow-sm"
+        >
+          {theme === 'dark' ? (
+            <>
+              <Sun className="w-4 h-4 text-amber-400" />
+              <span className="hidden md:inline">Light Mode</span>
+            </>
+          ) : (
+            <>
+              <Moon className="w-4 h-4 text-indigo-400" />
+              <span className="hidden md:inline">Dark Mode</span>
+            </>
+          )}
+        </button>
+
         {/* Real-time Admin Action Alerts (Promises + Due Today - Owner Only) */}
         {user?.role === 'owner' && (
           <AdminDueNotifications onNavigateRecovery={onNavigateRecovery} onNavigateAll={onNavigateAll} />
