@@ -1422,11 +1422,18 @@ export default function CustomerLedger() {
                             {new Date(displayPayDate).toLocaleDateString('en-PK', { day: '2-digit', month: 'short', year: 'numeric' })}
                           </td>
                           <td className="p-3">
-                            <span className={`px-2 py-0.5 rounded text-[11px] font-bold ${
-                              isAdvance ? 'bg-blue-500/10 text-blue-400 border border-blue-500/20' : 'bg-purple-500/10 text-purple-400 border border-purple-500/20'
-                            }`}>
-                              {isInitialAdvance ? 'Advance Payment' : (payment.forMonth || 'Monthly Installment')}
-                            </span>
+                            <div className="flex flex-wrap items-center gap-1.5">
+                              <span className={`px-2 py-0.5 rounded text-[11px] font-bold ${
+                                isAdvance ? 'bg-blue-500/10 text-blue-400 border border-blue-500/20' : 'bg-purple-500/10 text-purple-400 border border-purple-500/20'
+                              }`}>
+                                {isInitialAdvance ? 'Advance Payment' : (payment.forMonth || 'Monthly Installment')}
+                              </span>
+                              {Array.isArray(payment.batchBreakdown) && payment.batchBreakdown.length > 1 && (
+                                <span className="px-1.5 py-0.5 rounded text-[10px] font-mono bg-emerald-500/10 text-emerald-300 border border-emerald-500/20">
+                                  Combined: Rs. {Number(payment.batchTotal || 0).toLocaleString()}
+                                </span>
+                              )}
+                            </div>
                           </td>
                           <td className="p-3 uppercase">{payment.paymentMethod || 'Cash'}</td>
                           <td className="p-3 font-black text-emerald-400 text-sm print:text-emerald-800">
@@ -1443,7 +1450,28 @@ export default function CustomerLedger() {
                               <button
                                 onClick={() => {
                                   const matchedSale = ledgerData.installmentSales.find(s => s._id === (payment.installmentSale?._id || payment.installmentSale)) || ledgerData.installmentSales[0];
-                                  setSelectedPayment(payment);
+                                  let receiptPayment = payment;
+                                  if (Array.isArray(payment.batchBreakdown) && payment.batchBreakdown.length > 1) {
+                                    receiptPayment = {
+                                      ...payment,
+                                      amountPaid: payment.batchTotal || payment.batchBreakdown.reduce((s, b) => s + (Number(b.amountPaid) || 0), 0),
+                                      forMonth: payment.batchBreakdown.map(b => b.forMonth).join(', ')
+                                    };
+                                  } else if (payment.batchId) {
+                                    const siblings = (ledgerData.payments || []).filter(p => p.batchId === payment.batchId);
+                                    if (siblings.length > 1) {
+                                      const breakdown = siblings.map(s => ({ forMonth: s.forMonth, amountPaid: s.amountPaid }));
+                                      const total = breakdown.reduce((s, b) => s + (Number(b.amountPaid) || 0), 0);
+                                      receiptPayment = {
+                                        ...payment,
+                                        amountPaid: total,
+                                        batchTotal: total,
+                                        batchBreakdown: breakdown,
+                                        forMonth: breakdown.map(b => b.forMonth).join(', ')
+                                      };
+                                    }
+                                  }
+                                  setSelectedPayment(receiptPayment);
                                   setSelectedSaleForReceipt({ ...matchedSale, customer: ledgerData.customer });
                                 }}
                                 className="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg text-[11px] font-semibold border border-slate-700 transition cursor-pointer"

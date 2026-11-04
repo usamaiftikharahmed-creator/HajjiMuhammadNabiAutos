@@ -172,3 +172,82 @@ export const calculateInstallmentPlan = (sale, customPayments = null) => {
     remainingBalance: sale.remainingBalance ?? Math.max(0, totalFinanced - schedule.reduce((sum, s) => sum + s.paidAmount, 0))
   };
 };
+
+/**
+ * Automatically splits a single payment amount across sequential installment months
+ * starting from `startMonthKey` (e.g., Rs. 34,000 -> Sep: 15,000, Oct: 15,000, Nov: 4,000)
+ */
+export const buildMultiMonthAllocation = (plan, startMonthKey, rawTotalAmount, fallbackMonthlyAmount = 0) => {
+  const totalAmount = Number(rawTotalAmount) || 0;
+  if (totalAmount <= 0) return [];
+
+  const schedule = plan?.schedule || [];
+  const monthlyKist = Number(fallbackMonthlyAmount) || (schedule[0]?.targetAmount) || totalAmount;
+
+  if (schedule.length === 0) {
+    return [{
+      forMonth: startMonthKey || new Date().toLocaleDateString('en-US', { month: 'short', year: 'numeric' }),
+      amountPaid: totalAmount,
+      targetAmount: monthlyKist,
+      remainingBefore: monthlyKist,
+      remainingAfter: Math.max(0, monthlyKist - totalAmount),
+      isCleared: totalAmount >= monthlyKist
+    }];
+  }
+
+  let startIdx = schedule.findIndex(m => m.monthKey === startMonthKey);
+  if (startIdx === -1) startIdx = 0;
+
+  // Order months starting from selected month, then any earlier uncleared months
+  const orderedMonths = [
+    ...schedule.slice(startIdx),
+    ...schedule.slice(0, startIdx)
+  ];
+
+  const allocations = [];
+  let leftover = totalAmount;
+
+  for (let i = 0; i < orderedMonths.length; i++) {
+    if (leftover <= 0) break;
+    const m = orderedMonths[i];
+    const cap = m.remainingAmount > 0 ? m.remainingAmount : (i === 0 ? m.targetAmount : 0);
+    if (cap <= 0) continue;
+
+    const alloc = Math.min(leftover, cap);
+    const remAfter = Math.max(0, m.remainingAmount - alloc);
+    allocations.push({
+      forMonth: m.monthKey,
+      amountPaid: alloc,
+      targetAmount: m.targetAmount,
+      remainingBefore: m.remainingAmount,
+      remainingAfter: remAfter,
+      isCleared: remAfter === 0
+    });
+    leftover -= alloc;
+  }
+
+  // If there is still leftover beyond the scheduled months, allocate to subsequent months
+  if (leftover > 0) {
+    const lastScheduled = schedule[schedule.length - 1];
+    let baseDate = lastScheduled?.dueDate ? new Date(lastScheduled.dueDate) : new Date();
+    let extraStep = 1;
+    while (leftover > 0 && extraStep <= 36) {
+      const nextDate = new Date(baseDate.getFullYear(), baseDate.getMonth() + extraStep, 1);
+      const nextKey = `${SHORT_MONTHS[nextDate.getMonth()]} ${nextDate.getFullYear()}`;
+      const alloc = Math.min(leftover, monthlyKist);
+      const remAfter = Math.max(0, monthlyKist - alloc);
+      allocations.push({
+        forMonth: nextKey,
+        amountPaid: alloc,
+        targetAmount: monthlyKist,
+        remainingBefore: monthlyKist,
+        remainingAfter: remAfter,
+        isCleared: remAfter === 0
+      });
+      leftover -= alloc;
+      extraStep++;
+    }
+  }
+
+  return allocations;
+};

@@ -31,7 +31,14 @@ export default function PaymentReceiptModal({ payment, sale, onClose }) {
   const totalAmount = Number(sale?.totalAmount || sale?.grandTotal || 0);
   const monthlyAmount = Number(sale?.monthlyAmount || sale?.monthlyInstallment || 0);
 
-  const amountPaid = Number(payment?.amountPaid ?? payment?.amount ?? 0);
+  const breakdownList = Array.isArray(payment?.batchBreakdown) && payment.batchBreakdown.length > 1
+    ? payment.batchBreakdown
+    : null;
+
+  const amountPaid = breakdownList
+    ? Number(payment?.batchTotal || breakdownList.reduce((s, b) => s + (Number(b.amountPaid) || 0), 0))
+    : Number(payment?.amountPaid ?? payment?.amount ?? 0);
+
   const remainingBalance = Number(sale?.remainingBalance ?? 0);
   const prevBalance = remainingBalance + amountPaid;
 
@@ -62,11 +69,17 @@ export default function PaymentReceiptModal({ payment, sale, onClose }) {
     minute: '2-digit'
   });
 
-  const receiptNo = payment?._id 
-    ? `REC-${String(payment._id).slice(-6).toUpperCase()}` 
-    : `REC-${Date.now().toString().slice(-6)}`;
+  const receiptNo = payment?.batchId
+    ? `REC-${String(payment.batchId).slice(-6).toUpperCase()}`
+    : payment?._id 
+      ? `REC-${String(payment._id).slice(-6).toUpperCase()}` 
+      : `REC-${Date.now().toString().slice(-6)}`;
 
-  const paymentTypeLabel = isAdvance ? 'Advance / Booking Payment' : (payment?.forMonth || 'Monthly Installment');
+  const paymentTypeLabel = isAdvance
+    ? 'Advance / Booking Payment'
+    : breakdownList
+      ? breakdownList.map(b => b.forMonth).join(', ')
+      : (payment?.forMonth || 'Monthly Installment');
   const paymentMethod = (payment?.paymentMethod || payment?.paymentMode || 'Cash').toUpperCase();
 
   // WhatsApp Sender with clean, professional template
@@ -82,6 +95,10 @@ export default function PaymentReceiptModal({ payment, sale, onClose }) {
     if (chassisNumber) itemExtraParts.push(`Chas: ${chassisNumber}`);
     const itemExtraStr = itemExtraParts.length > 0 ? ` (${itemExtraParts.join(' | ')})` : '';
 
+    const breakdownText = breakdownList
+      ? `*Month-Wise Breakdown:*\n` + breakdownList.map(b => `  • ${b.forMonth}: Rs. ${Number(b.amountPaid).toLocaleString()}`).join('\n') + `\n`
+      : '';
+
     const message = 
       `*HAJJI MOHAMMAD NABI AUTOS*\n` +
       `*OFFICIAL PAYMENT RECEIPT*\n` +
@@ -92,10 +109,11 @@ export default function PaymentReceiptModal({ payment, sale, onClose }) {
       `*Phone:* ${customerPhone}\n` +
       `*Item:* ${itemName}${itemExtraStr}\n` +
       `*Payment For:* ${paymentTypeLabel}\n` +
+      breakdownText +
       `*Payment Mode:* ${paymentMethod}\n` +
       (payment?.transactionId ? `*Transaction ID:* ${payment.transactionId}\n` : '') +
       `----------------------------------------\n` +
-      `*Amount Paid:* Rs. ${amountPaid.toLocaleString()}\n` +
+      `*Total Amount Paid:* Rs. ${amountPaid.toLocaleString()}\n` +
       `*Remaining Balance:* Rs. ${remainingBalance.toLocaleString()}\n` +
       `----------------------------------------\n` +
       `*` + formatPromiseUrduNote(sale, new Date(paymentDate)) + `*\n` +
@@ -231,7 +249,7 @@ export default function PaymentReceiptModal({ payment, sale, onClose }) {
             <table className="w-full text-left border-collapse border border-slate-300 text-[11px]">
               <thead>
                 <tr className="bg-slate-100 text-slate-800 font-bold uppercase text-[9px] border-b border-slate-300">
-                  <th className="p-1.5 border-r border-slate-300">Particulars / Month</th>
+                  <th className="p-1.5 border-r border-slate-300">Particulars / Month(s)</th>
                   <th className="p-1.5 border-r border-slate-300">Payment Mode</th>
                   <th className="p-1.5 border-r border-slate-300">Previous Balance</th>
                   <th className="p-1.5 text-right">Amount Received</th>
@@ -241,8 +259,18 @@ export default function PaymentReceiptModal({ payment, sale, onClose }) {
                 <tr className="border-b border-slate-200 text-slate-800">
                   <td className="p-2 border-r border-slate-200">
                     <strong className="text-slate-900 block text-xs">{paymentTypeLabel}</strong>
+                    {breakdownList && (
+                      <div className="mt-1 space-y-0.5 border-t border-slate-200 pt-1">
+                        {breakdownList.map((b, idx) => (
+                          <div key={idx} className="flex justify-between text-[10px] font-mono text-slate-700">
+                            <span>• {b.forMonth}:</span>
+                            <span className="font-bold text-slate-900">Rs. {Number(b.amountPaid).toLocaleString()}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                     {payment?.transactionId && (
-                      <span className="text-[9px] text-slate-500 font-mono">TRX: {payment.transactionId}</span>
+                      <span className="text-[9px] text-slate-500 font-mono block mt-0.5">TRX: {payment.transactionId}</span>
                     )}
                   </td>
                   <td className="p-2 border-r border-slate-200 uppercase font-semibold text-purple-700">
@@ -261,7 +289,7 @@ export default function PaymentReceiptModal({ payment, sale, onClose }) {
             {/* Net Remaining Balance Banner */}
             <div className="grid grid-cols-2 gap-2 bg-emerald-50 border border-emerald-300 p-2.5 rounded-xl">
               <div>
-                <span className="text-[9px] text-emerald-900 uppercase font-bold block">Current Payment Received</span>
+                <span className="text-[9px] text-emerald-900 uppercase font-bold block">Total Payment Received</span>
                 <span className="text-base font-black text-emerald-700">Rs. {amountPaid.toLocaleString()}</span>
               </div>
               <div className="text-right border-l border-emerald-200 pl-2">

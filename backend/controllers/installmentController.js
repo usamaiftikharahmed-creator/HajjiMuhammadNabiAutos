@@ -509,20 +509,82 @@ export const recordPayment = async (req, res) => {
       });
     }
 
-    const payment = await Payment.create({
-      installmentSale: sale._id,
-      customer: sale.customer?._id || sale.customer,
-      amountPaid: paid,
-      paymentMethod,
-      transactionId,
-      forMonth,
-      notes,
-      receivedBy: req.user?._id || null,
-      createdAt: paymentDate
-    });
+    // Support Multi-Month Allocations (saves each month individually while generating a single combined receipt)
+    const rawAllocations = Array.isArray(req.body.allocations)
+      ? req.body.allocations
+          .map(a => ({
+            forMonth: cleanStr(a.forMonth || forMonth),
+            amountPaid: Number(a.amountPaid || a.amount || 0)
+          }))
+          .filter(a => a.forMonth && a.amountPaid > 0)
+      : [];
+
+    let payment = null;
+    let paymentsCreated = [];
+
+    if (rawAllocations.length > 1) {
+      const batchId = `BATCH-${Date.now()}-${Math.random().toString(36).slice(2, 7).toUpperCase()}`;
+      const totalAllocated = rawAllocations.reduce((sum, a) => sum + a.amountPaid, 0);
+      const effectivePaid = totalAllocated > 0 ? totalAllocated : paid;
+
+      if (effectivePaid > sale.remainingBalance) {
+        return res.status(400).json({
+          success: false,
+          message: `Total allocated amount (Rs. ${effectivePaid.toLocaleString()}) exceeds remaining balance of Rs. ${sale.remainingBalance.toLocaleString()}`
+        });
+      }
+
+      for (let idx = 0; idx < rawAllocations.length; idx++) {
+        const item = rawAllocations[idx];
+        // Add 1ms offset per row so sequence order is deterministic
+        const rowDate = new Date(paymentDate.getTime() + idx);
+        const createdDoc = await Payment.create({
+          installmentSale: sale._id,
+          customer: sale.customer?._id || sale.customer,
+          amountPaid: item.amountPaid,
+          paymentMethod,
+          transactionId,
+          forMonth: item.forMonth,
+          notes,
+          batchId,
+          batchTotal: effectivePaid,
+          batchBreakdown: rawAllocations,
+          receivedBy: req.user?._id || null,
+          createdAt: rowDate
+        });
+        paymentsCreated.push(createdDoc);
+      }
+
+      const firstObj = paymentsCreated[0]?.toObject ? paymentsCreated[0].toObject() : paymentsCreated[0];
+      payment = {
+        ...firstObj,
+        amountPaid: effectivePaid,
+        forMonth: rawAllocations.map(a => a.forMonth).join(', '),
+        batchId,
+        batchTotal: effectivePaid,
+        batchBreakdown: rawAllocations
+      };
+    } else {
+      const singleMonth = rawAllocations.length === 1 ? rawAllocations[0].forMonth : forMonth;
+      const singleAmount = rawAllocations.length === 1 ? rawAllocations[0].amountPaid : paid;
+      const createdDoc = await Payment.create({
+        installmentSale: sale._id,
+        customer: sale.customer?._id || sale.customer,
+        amountPaid: singleAmount,
+        paymentMethod,
+        transactionId,
+        forMonth: singleMonth,
+        notes,
+        receivedBy: req.user?._id || null,
+        createdAt: paymentDate
+      });
+      paymentsCreated = [createdDoc];
+      payment = createdDoc;
+    }
 
     // Update remaining balance & completion status
-    sale.remainingBalance = Math.max(0, sale.remainingBalance - paid);
+    const finalPaidAmount = Number(payment.amountPaid || paid);
+    sale.remainingBalance = Math.max(0, sale.remainingBalance - finalPaidAmount);
     if (sale.remainingBalance === 0) {
       sale.status = 'completed';
     }
@@ -545,14 +607,18 @@ export const recordPayment = async (req, res) => {
 
     await sale.save();
 
+    const monthsLabel = rawAllocations.length > 1
+      ? rawAllocations.map(a => `${a.forMonth}: Rs. ${a.amountPaid.toLocaleString()}`).join(' + ')
+      : payment.forMonth;
+
     await logActivity({
       req,
       action: 'RECORD_PAYMENT',
       module: 'Payments',
-      details: `Kist Wasooli: Rs. ${paid.toLocaleString()} wasool huay for "${sale.customer?.name}" (Item: "${sale.itemName}"). [Payment Mode: ${paymentMethod}, Baqi Kist: Rs. ${sale.remainingBalance.toLocaleString()}]`,
-      targetId: payment._id,
+      details: `Kist Wasooli: Rs. ${finalPaidAmount.toLocaleString()} (${monthsLabel}) wasool huay for "${sale.customer?.name}" (Item: "${sale.itemName}"). [Payment Mode: ${paymentMethod}, Baqi Kist: Rs. ${sale.remainingBalance.toLocaleString()}]`,
+      targetId: paymentsCreated[0]?._id,
       targetName: sale.customer?.name,
-      metadata: { itemName: sale.itemName, paid, paymentMethod, remainingBalance: sale.remainingBalance }
+      metadata: { itemName: sale.itemName, paid: finalPaidAmount, monthsLabel, paymentMethod, remainingBalance: sale.remainingBalance }
     });
 
     invalidateSalesCache();
@@ -562,6 +628,7 @@ export const recordPayment = async (req, res) => {
       message: 'Payment recorded successfully',
       remainingBalance: sale.remainingBalance,
       payment,
+      paymentsCreated,
       sale
     });
   } catch (error) {
@@ -608,6 +675,9 @@ export const fetchSalesFromDB = async () => {
               forMonth: 1,
               transactionId: 1,
               notes: 1,
+              batchId: 1,
+              batchTotal: 1,
+              batchBreakdown: 1,
               createdAt: 1
             }
           }

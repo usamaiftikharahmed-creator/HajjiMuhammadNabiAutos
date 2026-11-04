@@ -30,6 +30,18 @@ const paymentSchema = new mongoose.Schema(
     notes: {
       type: String
     },
+    batchId: {
+      type: String // Shared ID when multiple months are paid in a single transaction/invoice
+    },
+    batchTotal: {
+      type: Number // Total combined amount of the multi-month receipt
+    },
+    batchBreakdown: [
+      {
+        forMonth: { type: String },
+        amountPaid: { type: Number }
+      }
+    ],
     receivedBy: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'User'
@@ -49,6 +61,7 @@ paymentSchema.index({ customer: 1, createdAt: -1 });
 paymentSchema.index({ createdAt: -1, amountPaid: 1 });
 paymentSchema.index({ createdAt: -1 });
 paymentSchema.index({ forMonth: 1 });
+paymentSchema.index({ batchId: 1 });
 paymentSchema.index({ paymentMethod: 1 });
 paymentSchema.index({ receivedBy: 1 });
 
