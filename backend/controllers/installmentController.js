@@ -58,10 +58,11 @@ const saveFileToCloudDB = async (filePath, filename, mimeType = 'application/oct
   }
 };
 
-// Helper to parse "Nov 2025" / "Dec 2025" into a comparable timestamp
+// Helper to parse "Nov 2025" / "Oct 2025, Nov 2025" into a comparable timestamp
 const parseForMonthTimestamp = (forMonth) => {
   if (!forMonth || typeof forMonth !== 'string') return Number.MAX_SAFE_INTEGER;
-  const parsed = Date.parse(`1 ${forMonth.trim()}`);
+  const firstPart = forMonth.split(',')[0].trim();
+  const parsed = Date.parse(`1 ${firstPart}`);
   return isNaN(parsed) ? Number.MAX_SAFE_INTEGER : parsed;
 };
 
@@ -534,36 +535,22 @@ export const recordPayment = async (req, res) => {
         });
       }
 
-      for (let idx = 0; idx < rawAllocations.length; idx++) {
-        const item = rawAllocations[idx];
-        // Add 1ms offset per row so sequence order is deterministic
-        const rowDate = new Date(paymentDate.getTime() + idx);
-        const createdDoc = await Payment.create({
-          installmentSale: sale._id,
-          customer: sale.customer?._id || sale.customer,
-          amountPaid: item.amountPaid,
-          paymentMethod,
-          transactionId,
-          forMonth: item.forMonth,
-          notes,
-          batchId,
-          batchTotal: effectivePaid,
-          batchBreakdown: rawAllocations,
-          receivedBy: req.user?._id || null,
-          createdAt: rowDate
-        });
-        paymentsCreated.push(createdDoc);
-      }
-
-      const firstObj = paymentsCreated[0]?.toObject ? paymentsCreated[0].toObject() : paymentsCreated[0];
-      payment = {
-        ...firstObj,
+      const createdDoc = await Payment.create({
+        installmentSale: sale._id,
+        customer: sale.customer?._id || sale.customer,
         amountPaid: effectivePaid,
+        paymentMethod,
+        transactionId,
         forMonth: rawAllocations.map(a => a.forMonth).join(', '),
+        notes,
         batchId,
         batchTotal: effectivePaid,
-        batchBreakdown: rawAllocations
-      };
+        batchBreakdown: rawAllocations,
+        receivedBy: req.user?._id || null,
+        createdAt: paymentDate
+      });
+      paymentsCreated = [createdDoc];
+      payment = createdDoc;
     } else {
       const singleMonth = rawAllocations.length === 1 ? rawAllocations[0].forMonth : forMonth;
       const singleAmount = rawAllocations.length === 1 ? rawAllocations[0].amountPaid : paid;
@@ -1835,10 +1822,19 @@ export const deletePayment = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Payment entry not found' });
     }
 
-    recordDeletion('payments', id);
-
     const saleId = payment.installmentSale || payment.sale;
-    const amountPaid = Number(payment.amountPaid || payment.amount || 0);
+    let amountPaid = Number(payment.amountPaid || payment.amount || 0);
+    let siblingIds = [String(payment._id)];
+
+    if (payment.batchId) {
+      const batchDocs = await Payment.find({ batchId: payment.batchId }).lean();
+      if (batchDocs.length > 1) {
+        amountPaid = batchDocs.reduce((sum, d) => sum + Number(d.amountPaid || 0), 0);
+        siblingIds = batchDocs.map(d => String(d._id));
+      }
+    }
+
+    siblingIds.forEach(sId => recordDeletion('payments', sId));
 
     // If linked to a sale, restore the sale balances
     let sale = null;
@@ -1868,13 +1864,19 @@ export const deletePayment = async (req, res) => {
       }
     }
 
-    // Delete payment record from MongoDB Atlas
-    const payObjId = mongoose.Types.ObjectId.isValid(id) ? new mongoose.Types.ObjectId(id) : id;
-    await Payment.deleteOne({ $or: [{ _id: payObjId }, { _id: String(id) }] });
+    // Delete payment record(s) from MongoDB Atlas
+    if (payment.batchId) {
+      await Payment.deleteMany({ batchId: payment.batchId });
+    } else {
+      const payObjId = mongoose.Types.ObjectId.isValid(id) ? new mongoose.Types.ObjectId(id) : id;
+      await Payment.deleteOne({ $or: [{ _id: payObjId }, { _id: String(id) }] });
+    }
 
     try {
       if (offlineDb?.payments?.findByIdAndDelete) {
-        await offlineDb.payments.findByIdAndDelete(id);
+        for (const sId of siblingIds) {
+          await offlineDb.payments.findByIdAndDelete(sId);
+        }
       }
     } catch (e) {}
 

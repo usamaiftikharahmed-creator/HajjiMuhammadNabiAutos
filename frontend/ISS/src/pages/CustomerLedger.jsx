@@ -12,6 +12,7 @@ import { getFileUrl, getCustomerInitials } from '../utils/fileUtils';
 import { getPromiseMonthsInfo } from '../utils/promiseUtils';
 import { compressImage } from '../utils/imageCompressor';
 import { uploadSaleDocumentReliably } from '../utils/cloudUploadHelper';
+import { mergeBatchPayments } from '../utils/installmentSchedule';
 
 import PaymentReceiptModal from '../components/PaymentReceiptModal';
 import OverdueAlert from '../components/OverdueAlert';
@@ -851,7 +852,7 @@ export default function CustomerLedger() {
     window.open(`https://wa.me/${rawPhone}?text=${encodeURIComponent(message)}`, '_blank');
   };
 
-  const filteredPayments = (Array.isArray(ledgerData?.payments) ? ledgerData.payments : [])
+  const filteredPayments = mergeBatchPayments(Array.isArray(ledgerData?.payments) ? ledgerData.payments : [])
     .filter(payment => {
       const payDate = new Date(payment.createdAt);
       if (startDate && payDate < new Date(startDate)) return false;
@@ -879,7 +880,8 @@ export default function CustomerLedger() {
 
       const parseMonth = (m) => {
         if (!m || typeof m !== 'string') return Number.MAX_SAFE_INTEGER;
-        const p = Date.parse(`1 ${m.trim()}`);
+        const firstPart = m.split(',')[0].trim();
+        const p = Date.parse(`1 ${firstPart}`);
         return isNaN(p) ? Number.MAX_SAFE_INTEGER : p;
       };
       const aMonthTs = parseMonth(a?.forMonth);
@@ -1423,14 +1425,20 @@ export default function CustomerLedger() {
                           </td>
                           <td className="p-3">
                             <div className="flex flex-wrap items-center gap-1.5">
-                              <span className={`px-2 py-0.5 rounded text-[11px] font-bold ${
-                                isAdvance ? 'bg-blue-500/10 text-blue-400 border border-blue-500/20' : 'bg-purple-500/10 text-purple-400 border border-purple-500/20'
-                              }`}>
-                                {isInitialAdvance ? 'Advance Payment' : (payment.forMonth || 'Monthly Installment')}
-                              </span>
-                              {Array.isArray(payment.batchBreakdown) && payment.batchBreakdown.length > 1 && (
-                                <span className="px-1.5 py-0.5 rounded text-[10px] font-mono bg-emerald-500/10 text-emerald-300 border border-emerald-500/20">
-                                  Combined: Rs. {Number(payment.batchTotal || 0).toLocaleString()}
+                              {Array.isArray(payment.batchBreakdown) && payment.batchBreakdown.length > 1 ? (
+                                payment.batchBreakdown.map((b, bIdx) => (
+                                  <span
+                                    key={bIdx}
+                                    className="px-2 py-0.5 rounded text-[11px] font-bold bg-purple-500/10 text-purple-300 border border-purple-500/20 font-mono"
+                                  >
+                                    {b.forMonth} <span className="text-emerald-400">({Number(b.amountPaid || 0).toLocaleString()})</span>
+                                  </span>
+                                ))
+                              ) : (
+                                <span className={`px-2 py-0.5 rounded text-[11px] font-bold ${
+                                  isAdvance ? 'bg-blue-500/10 text-blue-400 border border-blue-500/20' : 'bg-purple-500/10 text-purple-400 border border-purple-500/20'
+                                }`}>
+                                  {isInitialAdvance ? 'Advance Payment' : (payment.forMonth || 'Monthly Installment')}
                                 </span>
                               )}
                             </div>

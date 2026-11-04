@@ -3,7 +3,7 @@ import { X, User, Package, History, DollarSign, Printer, Send, ExternalLink, Cam
 import toast from 'react-hot-toast';
 import PaymentReceiptModal from './PaymentReceiptModal';
 import A4ReceiptModal from './A4ReceiptModal';
-import { calculateInstallmentPlan } from '../utils/installmentSchedule';
+import { calculateInstallmentPlan, mergeBatchPayments } from '../utils/installmentSchedule';
 import { getFileUrl, getCustomerInitials } from '../utils/fileUtils';
 import { getPromiseMonthsInfo } from '../utils/promiseUtils';
 import PayKistModal from './PayKistModal';
@@ -563,7 +563,7 @@ export default function ViewDetailsModal({ selectedSale, onClose, onRefresh, onO
                 </thead>
                 <tbody className="divide-y divide-slate-800/50 text-slate-300">
                   {selectedSale.payments && selectedSale.payments.length > 0 ? (
-                    [...selectedSale.payments].sort((a, b) => { const aM = String(a?.forMonth || '').trim().toLowerCase(); const bM = String(b?.forMonth || '').trim().toLowerCase(); const aAdv = aM === 'advance payment' || !aM || aM === '-'; const bAdv = bM === 'advance payment' || !bM || bM === '-'; if (aAdv && !bAdv) return -1; if (!aAdv && bAdv) return 1; const aD = a?.createdAt ? new Date(a.createdAt).getTime() : 0; const bD = b?.createdAt ? new Date(b.createdAt).getTime() : 0; const aDay = new Date(aD).setHours(0, 0, 0, 0); const bDay = new Date(bD).setHours(0, 0, 0, 0); const pM = (m) => { const p = Date.parse(`1 ${String(m || '').trim()}`); return isNaN(p) ? Number.MAX_SAFE_INTEGER : p; }; if (aDay !== bDay) return aDay - bDay; const aMT = pM(a?.forMonth); const bMT = pM(b?.forMonth); if (aMT !== bMT) return aMT - bMT; return aD - bD; }).map((pay, idx) => {
+                    mergeBatchPayments(selectedSale.payments).sort((a, b) => { const aM = String(a?.forMonth || '').trim().toLowerCase(); const bM = String(b?.forMonth || '').trim().toLowerCase(); const aAdv = aM === 'advance payment' || !aM || aM === '-'; const bAdv = bM === 'advance payment' || !bM || bM === '-'; if (aAdv && !bAdv) return -1; if (!aAdv && bAdv) return 1; const aD = a?.createdAt ? new Date(a.createdAt).getTime() : 0; const bD = b?.createdAt ? new Date(b.createdAt).getTime() : 0; const aDay = new Date(aD).setHours(0, 0, 0, 0); const bDay = new Date(bD).setHours(0, 0, 0, 0); const pM = (m) => { const first = String(m || '').split(',')[0].trim(); const p = Date.parse(`1 ${first}`); return isNaN(p) ? Number.MAX_SAFE_INTEGER : p; }; if (aDay !== bDay) return aDay - bDay; const aMT = pM(a?.forMonth); const bMT = pM(b?.forMonth); if (aMT !== bMT) return aMT - bMT; return aD - bD; }).map((pay, idx) => {
                       const isAdvance = 
                         pay.forMonth?.toLowerCase().includes('advance') || 
                         pay.notes?.toLowerCase().includes('advance') ||
@@ -582,7 +582,9 @@ export default function ViewDetailsModal({ selectedSale, onClose, onRefresh, onO
                               </span>
                             ) : (
                               <span className="text-purple-400 font-bold bg-purple-500/10 px-2.5 py-0.5 rounded border border-purple-500/20 inline-block whitespace-nowrap">
-                                {pay.forMonth}
+                                {Array.isArray(pay.batchBreakdown) && pay.batchBreakdown.length > 1
+                                  ? pay.batchBreakdown.map(b => `${b.forMonth} (${Number(b.amountPaid || 0).toLocaleString()})`).join(' + ')
+                                  : pay.forMonth}
                               </span>
                             )}
                           </td>

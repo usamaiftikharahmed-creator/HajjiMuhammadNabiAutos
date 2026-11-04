@@ -30,6 +30,45 @@ export const parseMonthYear = (str) => {
 const SHORT_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const LONG_MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 
+/**
+ * Merges any split payments that share the same batchId into a single combined payment entry
+ * so the Ledger and Payment History always display 1 clean row per transaction.
+ */
+export const mergeBatchPayments = (payments = []) => {
+  if (!Array.isArray(payments) || payments.length === 0) return [];
+  const seenBatches = new Map();
+  const result = [];
+
+  for (const p of payments) {
+    if (!p.batchId) {
+      result.push(p);
+      continue;
+    }
+
+    if (!seenBatches.has(p.batchId)) {
+      const clone = { ...p };
+      seenBatches.set(p.batchId, clone);
+      result.push(clone);
+    } else {
+      const primary = seenBatches.get(p.batchId);
+      // If multiple DB rows exist for the same batchId, combine them into the single row
+      const breakdown = Array.isArray(primary.batchBreakdown) && primary.batchBreakdown.length > 1
+        ? primary.batchBreakdown
+        : [
+            { forMonth: primary.forMonth, amountPaid: Number(primary.amountPaid || 0) },
+            { forMonth: p.forMonth, amountPaid: Number(p.amountPaid || 0) }
+          ];
+      const total = primary.batchTotal || breakdown.reduce((s, b) => s + (Number(b.amountPaid) || 0), 0);
+      primary.amountPaid = total;
+      primary.batchTotal = total;
+      primary.batchBreakdown = breakdown;
+      primary.forMonth = breakdown.map(b => b.forMonth).join(', ');
+    }
+  }
+
+  return result;
+};
+
 export const calculateInstallmentPlan = (sale, customPayments = null) => {
   if (!sale) return null;
 
@@ -81,9 +120,27 @@ export const calculateInstallmentPlan = (sale, customPayments = null) => {
     });
   }
 
-  // 2. Extract and assign payments
-  const allPayments = customPayments || sale.payments || [];
+  // 2. Extract and assign payments (supporting both single-month and multi-month batchBreakdown entries)
+  const rawPayments = customPayments || sale.payments || [];
+  const allPayments = mergeBatchPayments(rawPayments);
   const unassignedPayments = [];
+
+  const assignSingleMonthItem = (rawMonthStr, paidVal, sourcePayment) => {
+    if (paidVal <= 0) return;
+    const parsed = parseMonthYear(rawMonthStr);
+    let matchedMonth = null;
+    if (parsed) {
+      matchedMonth = schedule.find(
+        (m) => m.dueDate.getMonth() === parsed.month && m.dueDate.getFullYear() === parsed.year
+      );
+    }
+    if (matchedMonth) {
+      matchedMonth.paidAmount += paidVal;
+      matchedMonth.payments.push({ ...sourcePayment, forMonth: rawMonthStr, amountPaid: paidVal });
+    } else {
+      unassignedPayments.push({ ...sourcePayment, forMonth: rawMonthStr, amountPaid: paidVal });
+    }
+  };
 
   allPayments.forEach((p) => {
     const rawMonth = p.forMonth || '';
@@ -91,22 +148,15 @@ export const calculateInstallmentPlan = (sale, customPayments = null) => {
       return; // Skip advance payment at booking
     }
 
-    const parsed = parseMonthYear(rawMonth);
-    let matchedMonth = null;
-
-    if (parsed) {
-      matchedMonth = schedule.find(
-        (m) => m.dueDate.getMonth() === parsed.month && m.dueDate.getFullYear() === parsed.year
-      );
+    if (Array.isArray(p.batchBreakdown) && p.batchBreakdown.length > 1) {
+      p.batchBreakdown.forEach((b) => {
+        assignSingleMonthItem(b.forMonth, Number(b.amountPaid || 0), p);
+      });
+      return;
     }
 
     const paidVal = Number(p.amountPaid || p.amount || 0);
-    if (matchedMonth && paidVal > 0) {
-      matchedMonth.paidAmount += paidVal;
-      matchedMonth.payments.push(p);
-    } else if (paidVal > 0) {
-      unassignedPayments.push(p);
-    }
+    assignSingleMonthItem(rawMonth, paidVal, p);
   });
 
   // 3. Allocate any unassigned / FIFO payments to the earliest months
