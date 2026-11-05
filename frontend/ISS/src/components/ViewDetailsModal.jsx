@@ -426,7 +426,12 @@ export default function ViewDetailsModal({ selectedSale, onClose, onRefresh, onO
               </div>
               <div>
                 <span className="text-slate-400 block">Advance Paid</span>
-                <span className="text-emerald-400 font-semibold">Rs. {Number(selectedSale.advancePayment || 0).toLocaleString()}</span>
+                <span className="text-emerald-400 font-semibold">Rs. {Number(selectedSale.advancePaidNow || selectedSale.advancePayment || 0).toLocaleString()}</span>
+                {Number(selectedSale.remainingAdvance || 0) > 0 && (
+                  <span className="text-[10px] text-amber-400 font-bold block">
+                    Baqi Adv: Rs. {Number(selectedSale.remainingAdvance).toLocaleString()}
+                  </span>
+                )}
               </div>
               <div>
                 <span className="text-slate-400 block">Remaining Balance</span>

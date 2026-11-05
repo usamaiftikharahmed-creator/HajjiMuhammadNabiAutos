@@ -14,27 +14,35 @@ export default function PayKistModal({ sale, selectedSale, onClose, onSuccess })
     return calculateInstallmentPlan(activeSale);
   }, [activeSale]);
 
-  // Default to Oldest Pending Month (Earliest Unpaid or Short Payment Month)
+  const pendingAdvanceAmount = Number(activeSale?.remainingAdvance || 0);
+
+  // Default to Remaining Advance if pending, else Oldest Pending Month
   const defaultMonth = useMemo(() => {
+    if (pendingAdvanceAmount > 0) {
+      return 'Remaining Advance';
+    }
     if (plan?.oldestPendingMonth?.monthKey) {
       return plan.oldestPendingMonth.monthKey;
     }
     return new Date().toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
-  }, [plan]);
+  }, [plan, pendingAdvanceAmount]);
 
-  // Default amount: remaining balance for this oldest pending month
+  // Default amount: remaining advance if pending, else oldest pending month amount
   const defaultAmount = useMemo(() => {
+    if (pendingAdvanceAmount > 0) {
+      return pendingAdvanceAmount;
+    }
     if (plan?.oldestPendingMonth && plan.oldestPendingMonth.remainingAmount > 0) {
       return plan.oldestPendingMonth.remainingAmount;
     }
     return activeSale?.monthlyAmount || '';
-  }, [plan, activeSale]);
+  }, [plan, activeSale, pendingAdvanceAmount]);
 
   const promiseInfo = useMemo(() => {
     return getPromiseMonthsInfo(activeSale);
   }, [activeSale]);
 
-  const [isPayingRemainingAdvance, setIsPayingRemainingAdvance] = useState(false);
+  const [isPayingRemainingAdvance, setIsPayingRemainingAdvance] = useState(() => pendingAdvanceAmount > 0);
   const [forMonth, setForMonth] = useState(defaultMonth);
   const [amountPaid, setAmountPaid] = useState(defaultAmount);
   const [customRows, setCustomRows] = useState(null); // null = automatic multi-month split; array = manual rows
@@ -67,6 +75,16 @@ export default function PayKistModal({ sale, selectedSale, onClose, onSuccess })
   const handleSelectMonth = (monthKey) => {
     setForMonth(monthKey);
     setCustomRows(null);
+    if (monthKey === 'Remaining Advance') {
+      setIsPayingRemainingAdvance(true);
+      setAmountPaid(pendingAdvanceAmount);
+      setNotes('Remaining Advance Cleared');
+      return;
+    }
+    setIsPayingRemainingAdvance(false);
+    if (notes === 'Remaining Advance Cleared') {
+      setNotes('');
+    }
     const targetMonth = plan?.schedule?.find(m => m.monthKey === monthKey);
     if (targetMonth) {
       setAmountPaid(targetMonth.remainingAmount || activeSale?.monthlyAmount || '');
@@ -75,22 +93,30 @@ export default function PayKistModal({ sale, selectedSale, onClose, onSuccess })
 
   // Month Options for dropdown
   const monthOptions = useMemo(() => {
+    const list = [];
+    if (pendingAdvanceAmount > 0) {
+      list.push({
+        value: 'Remaining Advance',
+        label: `⚡ Baqi Advance (Rs. ${pendingAdvanceAmount.toLocaleString()}) — Pending Advance`
+      });
+    }
+
     if (plan?.schedule && plan.schedule.length > 0) {
-      return plan.schedule.map(m => {
+      plan.schedule.forEach(m => {
         let tag = '';
         if (m.status === 'CLEARED') tag = '✓ Cleared';
         else if (m.status === 'SHORT') tag = `⚠️ Short (Baqi: Rs. ${m.remainingAmount.toLocaleString()})`;
         else if (m.isOverdue) tag = '● Overdue Kist';
         else tag = 'Pending';
-        return {
+        list.push({
           value: m.monthKey,
           label: `${m.monthKey} — Rs. ${m.targetAmount.toLocaleString()} (${tag})`
-        };
+        });
       });
+      return list;
     }
 
     // Fallback options if schedule cannot be calculated
-    const options = [];
     const currentDate = new Date();
     const currentYear = currentDate.getFullYear();
     const currentMonth = currentDate.getMonth();
@@ -98,15 +124,14 @@ export default function PayKistModal({ sale, selectedSale, onClose, onSuccess })
       const d = new Date(currentYear, currentMonth + i, 1);
       const monthStr = d.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
       const label = i === 0 ? `${monthStr} (Current Month)` : monthStr;
-      options.push({ value: monthStr, label });
+      list.push({ value: monthStr, label });
     }
-    return options;
-  }, [plan]);
+    return list;
+  }, [plan, pendingAdvanceAmount]);
 
   if (!activeSale) return null;
 
   const currentRemaining = Number(activeSale.remainingBalance || 0);
-  const pendingAdvanceAmount = Number(activeSale.remainingAdvance || 0);
   const inputAmount = Number(amountPaid) || 0;
   const projectedRemaining = Math.max(0, currentRemaining - inputAmount);
 
@@ -527,6 +552,22 @@ export default function PayKistModal({ sale, selectedSale, onClose, onSuccess })
             </div>
 
             <div className="flex gap-1.5 overflow-x-auto pb-1 scrollbar-thin">
+              {pendingAdvanceAmount > 0 && (
+                <button
+                  type="button"
+                  onClick={() => handleSelectMonth('Remaining Advance')}
+                  className={`shrink-0 px-2.5 py-1 rounded-xl text-[11px] font-mono border transition flex items-center gap-1 cursor-pointer ${
+                    isPayingRemainingAdvance
+                      ? 'bg-amber-500 border-amber-300 text-slate-950 font-bold shadow-md'
+                      : 'bg-amber-950/60 border-amber-500/40 text-amber-300 hover:border-amber-400'
+                  }`}
+                  title={`Baqi Advance: Rs. ${pendingAdvanceAmount.toLocaleString()}`}
+                >
+                  <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
+                  <span>⚡ Baqi Advance</span>
+                  <span className="text-[10px] font-bold">({Math.round(pendingAdvanceAmount / 1000)}k)</span>
+                </button>
+              )}
               {plan.schedule.map((m) => {
                 const isSelected = m.monthKey === forMonth;
                 const isCoveredInMulti = coveredMonthsSet.has(m.monthKey) && activeAllocations.length > 1;
@@ -562,8 +603,67 @@ export default function PayKistModal({ sale, selectedSale, onClose, onSuccess })
           </div>
         )}
 
-        {/* MONTH INSTALLMENT TRACKER CARD */}
-        {selectedMonthObj && (
+        {/* MONTH / ADVANCE INSTALLMENT TRACKER CARD */}
+        {isPayingRemainingAdvance ? (
+          <div className="bg-slate-950 p-3.5 rounded-2xl border border-amber-500/40 space-y-2">
+            <div className="flex justify-between items-center border-b border-slate-800/80 pb-2">
+              <div className="flex items-center gap-2">
+                <DollarSign className="w-4 h-4 text-amber-400" />
+                <span className="text-xs font-bold text-white uppercase tracking-wider">
+                  Target: <span className="text-amber-300 font-mono">Baqi Advance (Remaining Advance)</span>
+                </span>
+              </div>
+              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                ⚡ Pending Advance
+              </span>
+            </div>
+
+            <div className="grid grid-cols-3 gap-2 text-center">
+              <div className="bg-slate-900/90 p-2 rounded-xl border border-slate-800">
+                <span className="text-[10px] text-slate-400 block">Kul Baqi Advance</span>
+                <span className="text-xs font-bold text-amber-400 font-mono">
+                  Rs. {pendingAdvanceAmount.toLocaleString()}
+                </span>
+              </div>
+              <div className="bg-slate-900/90 p-2 rounded-xl border border-slate-800">
+                <span className="text-[10px] text-slate-400 block">Abhi Wasool Raqam</span>
+                <span className="text-xs font-bold text-emerald-400 font-mono">
+                  Rs. {inputAmount.toLocaleString()}
+                </span>
+              </div>
+              <div className="bg-slate-900/90 p-2 rounded-xl border border-slate-800">
+                <span className="text-[10px] text-slate-400 block">Iske Baad Baqi Adv</span>
+                <span className={`text-xs font-black font-mono ${Math.max(0, pendingAdvanceAmount - inputAmount) === 0 ? 'text-emerald-400' : 'text-amber-400'}`}>
+                  {Math.max(0, pendingAdvanceAmount - inputAmount) === 0 ? '✓ NIL (Cleared)' : `Rs. ${(pendingAdvanceAmount - inputAmount).toLocaleString()}`}
+                </span>
+              </div>
+            </div>
+
+            <div className={`p-2 rounded-xl text-[11px] font-medium border flex items-center justify-between gap-2 ${
+              inputAmount >= pendingAdvanceAmount
+                ? 'bg-emerald-950/40 border-emerald-800/60 text-emerald-200'
+                : 'bg-amber-950/40 border-amber-800/60 text-amber-200'
+            }`}>
+              <div className="flex items-center gap-1.5">
+                {inputAmount >= pendingAdvanceAmount ? (
+                  <>
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                    <span>
+                      ✓ <strong>Advance 100% Clear:</strong> Rs. {inputAmount.toLocaleString()} wasool hone par customer ka <strong>Baqi Advance mukammal clear (PAID)</strong> ho jayega!
+                    </span>
+                  </>
+                ) : (
+                  <>
+                    <AlertTriangle className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                    <span>
+                      ⚠️ <strong>Partial Advance:</strong> Rs. {inputAmount.toLocaleString()} ke baad <strong>Rs. {(pendingAdvanceAmount - inputAmount).toLocaleString()}</strong> advance baqi rahega.
+                    </span>
+                  </>
+                )}
+              </div>
+            </div>
+          </div>
+        ) : selectedMonthObj ? (
           <div className="bg-slate-950 p-3.5 rounded-2xl border border-slate-800 space-y-2">
             <div className="flex justify-between items-center border-b border-slate-800/80 pb-2">
               <div className="flex items-center gap-2">
@@ -740,14 +840,25 @@ export default function PayKistModal({ sale, selectedSale, onClose, onSuccess })
               )
             )}
           </div>
-        )}
+        ) : null}
 
         {/* Payment Form */}
         <form onSubmit={handleSubmit} className="space-y-3.5 text-xs">
           <div>
             <div className="flex justify-between items-center mb-1">
               <label className="text-slate-300 font-medium">Total Amount Received / کل وصول کردہ رقم (روپے) *</label>
-              {selectedMonthObj?.remainingAmount > 0 && (
+              {isPayingRemainingAdvance ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCustomRows(null);
+                    setAmountPaid(pendingAdvanceAmount);
+                  }}
+                  className="text-[10px] text-amber-400 hover:text-amber-300 font-bold cursor-pointer"
+                >
+                  ⚡ Set Full Baqi Advance: Rs. {pendingAdvanceAmount.toLocaleString()}
+                </button>
+              ) : selectedMonthObj?.remainingAmount > 0 && (
                 <button
                   type="button"
                   onClick={() => {
@@ -767,10 +878,10 @@ export default function PayKistModal({ sale, selectedSale, onClose, onSuccess })
                 setCustomRows(null);
                 setAmountPaid(e.target.value);
               }}
-              placeholder={`e.g. ${selectedMonthObj?.remainingAmount || activeSale.monthlyAmount} (ya multiple months ki total raqam likhein)`}
+              placeholder={isPayingRemainingAdvance ? `Baqi Advance: ${pendingAdvanceAmount}` : `e.g. ${selectedMonthObj?.remainingAmount || activeSale.monthlyAmount} (ya multiple months ki total raqam likhein)`}
               required
               min="1"
-              max={currentRemaining}
+              max={isPayingRemainingAdvance ? pendingAdvanceAmount : currentRemaining}
               className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-white focus:outline-none focus:border-emerald-500 font-mono text-sm font-bold"
             />
           </div>

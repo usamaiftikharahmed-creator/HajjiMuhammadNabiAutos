@@ -24,7 +24,7 @@ const ThemedToaster = () => {
   const { theme } = useTheme();
   const isLight = theme === 'light';
   return (
-    <Toaster 
+    <Toaster
       position="top-right"
       toastOptions={{
         duration: 3000,
@@ -64,13 +64,13 @@ export default function App() {
           <Router>
             <Routes>
               <Route path="/login" element={<Login />} />
-              <Route 
-                path="/dashboard" 
+              <Route
+                path="/dashboard"
                 element={
                   <ProtectedRoute>
                     <Dashboard />
                   </ProtectedRoute>
-                } 
+                }
               />
               <Route path="*" element={<Navigate to="/dashboard" replace />} />
             </Routes>

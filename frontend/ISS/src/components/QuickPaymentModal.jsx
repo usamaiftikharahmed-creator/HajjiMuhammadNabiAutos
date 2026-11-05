@@ -43,27 +43,36 @@ export default function QuickPaymentModal({ customer, activeSales, sales, initia
     return calculateInstallmentPlan(selectedSale);
   }, [selectedSale]);
 
-  // Default to Oldest Pending Month (Earliest Unpaid or Short Payment Month)
+  const pendingAdvanceAmount = Number(selectedSale?.remainingAdvance || 0);
+
+  // Default to Remaining Advance if pending, else Oldest Pending Month
   const defaultMonth = useMemo(() => {
+    if (pendingAdvanceAmount > 0) {
+      return 'Remaining Advance';
+    }
     if (plan?.oldestPendingMonth?.monthKey) {
       return plan.oldestPendingMonth.monthKey;
     }
     return new Date().toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
-  }, [plan]);
+  }, [plan, pendingAdvanceAmount]);
 
-  // Default amount: remaining balance for this oldest pending month
+  // Default amount: remaining advance if pending, else oldest pending month amount
   const defaultAmount = useMemo(() => {
+    if (pendingAdvanceAmount > 0) {
+      return pendingAdvanceAmount;
+    }
     if (plan?.oldestPendingMonth && plan.oldestPendingMonth.remainingAmount > 0) {
       return plan.oldestPendingMonth.remainingAmount;
     }
     return selectedSale?.monthlyAmount || '';
-  }, [plan, selectedSale]);
+  }, [plan, selectedSale, pendingAdvanceAmount]);
 
   const promiseInfo = useMemo(() => {
     if (!selectedSale) return { totalMonths: 0, remainingMonths: 0 };
     return getPromiseMonthsInfo(selectedSale);
   }, [selectedSale]);
 
+  const [isPayingRemainingAdvance, setIsPayingRemainingAdvance] = useState(() => pendingAdvanceAmount > 0);
   const [amountPaid, setAmountPaid] = useState(defaultAmount);
   const [forMonth, setForMonth] = useState(defaultMonth);
   const [customRows, setCustomRows] = useState(null); // null = automatic multi-month split; array = manual rows
@@ -77,11 +86,21 @@ export default function QuickPaymentModal({ customer, activeSales, sales, initia
   // Sync state when selected sale changes
   useEffect(() => {
     setCustomRows(null);
-    if (plan?.oldestPendingMonth) {
+    const adv = Number(selectedSale?.remainingAdvance || 0);
+    if (adv > 0) {
+      setIsPayingRemainingAdvance(true);
+      setForMonth('Remaining Advance');
+      setAmountPaid(adv);
+      setNotes('Remaining Advance Cleared');
+    } else if (plan?.oldestPendingMonth) {
+      setIsPayingRemainingAdvance(false);
       setForMonth(plan.oldestPendingMonth.monthKey);
       setAmountPaid(plan.oldestPendingMonth.remainingAmount || selectedSale?.monthlyAmount || '');
+      setNotes('');
     } else if (selectedSale) {
+      setIsPayingRemainingAdvance(false);
       setAmountPaid(selectedSale.monthlyAmount || '');
+      setNotes('');
     }
   }, [selectedSaleId, plan, selectedSale]);
 
@@ -97,14 +116,25 @@ export default function QuickPaymentModal({ customer, activeSales, sales, initia
 
   // Automatic Multi-Month Allocation when user types a larger amount (e.g. 34,000 across Sep, Oct, Nov)
   const autoAllocations = useMemo(() => {
+    if (isPayingRemainingAdvance) return [];
     return buildMultiMonthAllocation(plan, forMonth, amountPaid, selectedSale?.monthlyAmount);
-  }, [plan, forMonth, amountPaid, selectedSale]);
+  }, [plan, forMonth, amountPaid, selectedSale, isPayingRemainingAdvance]);
 
   const activeAllocations = customRows !== null ? customRows : autoAllocations;
 
   const handleSelectMonth = (monthKey) => {
     setForMonth(monthKey);
     setCustomRows(null);
+    if (monthKey === 'Remaining Advance') {
+      setIsPayingRemainingAdvance(true);
+      setAmountPaid(pendingAdvanceAmount);
+      setNotes('Remaining Advance Cleared');
+      return;
+    }
+    setIsPayingRemainingAdvance(false);
+    if (notes === 'Remaining Advance Cleared') {
+      setNotes('');
+    }
     const targetMonth = plan?.schedule?.find(m => m.monthKey === monthKey);
     if (targetMonth) {
       setAmountPaid(targetMonth.remainingAmount || selectedSale?.monthlyAmount || '');
@@ -113,18 +143,27 @@ export default function QuickPaymentModal({ customer, activeSales, sales, initia
 
   // Month Options for dropdown
   const monthOptions = useMemo(() => {
+    const list = [];
+    if (pendingAdvanceAmount > 0) {
+      list.push({
+        value: 'Remaining Advance',
+        label: `⚡ Baqi Advance (Rs. ${pendingAdvanceAmount.toLocaleString()}) — Pending Advance`
+      });
+    }
+
     if (plan?.schedule && plan.schedule.length > 0) {
-      return plan.schedule.map(m => {
+      plan.schedule.forEach(m => {
         let tag = '';
         if (m.status === 'CLEARED') tag = '✓ Cleared';
         else if (m.status === 'SHORT') tag = `⚠️ Short (Baqi: Rs. ${m.remainingAmount.toLocaleString()})`;
         else if (m.isOverdue) tag = '● Overdue Kist';
         else tag = 'Pending';
-        return {
+        list.push({
           value: m.monthKey,
           label: `${m.monthKey} — Rs. ${m.targetAmount.toLocaleString()} (${tag})`
-        };
+        });
       });
+      return list;
     }
 
     const options = [];
@@ -138,7 +177,7 @@ export default function QuickPaymentModal({ customer, activeSales, sales, initia
       options.push({ value: monthStr, label });
     }
     return options;
-  }, [plan]);
+  }, [plan, pendingAdvanceAmount]);
 
   // Update monthly target amount when switching item account
   const handleItemChange = (e) => {
@@ -225,18 +264,27 @@ export default function QuickPaymentModal({ customer, activeSales, sales, initia
       return;
     }
 
-    if (currentRemaining > 0 && numAmount > currentRemaining) {
-      const msg = `Raqam kul baqaya (Rs. ${currentRemaining.toLocaleString()}) se zyada nahi ho sakti.`;
-      setError(msg);
-      toast.error(msg);
-      return;
+    if (isPayingRemainingAdvance) {
+      if (numAmount > pendingAdvanceAmount) {
+        const msg = `Amount baki advance (Rs. ${pendingAdvanceAmount.toLocaleString()}) se zyada nahi ho sakti.`;
+        setError(msg);
+        toast.error(msg);
+        return;
+      }
+    } else {
+      if (currentRemaining > 0 && numAmount > currentRemaining) {
+        const msg = `Raqam kul baqaya (Rs. ${currentRemaining.toLocaleString()}) se zyada nahi ho sakti.`;
+        setError(msg);
+        toast.error(msg);
+        return;
+      }
     }
 
     setLoading(true);
     setError('');
 
     try {
-      const payloadAllocations = activeAllocations.length > 0
+      const payloadAllocations = !isPayingRemainingAdvance && activeAllocations.length > 0
         ? activeAllocations
             .map(a => ({ forMonth: a.forMonth, amountPaid: Number(a.amountPaid) || 0 }))
             .filter(a => a.forMonth && a.amountPaid > 0)
@@ -247,17 +295,27 @@ export default function QuickPaymentModal({ customer, activeSales, sales, initia
         amountPaid: numAmount,
         paymentMethod,
         transactionId,
-        forMonth: payloadAllocations[0]?.forMonth || forMonth,
+        forMonth: isPayingRemainingAdvance
+          ? 'Remaining Advance'
+          : (payloadAllocations[0]?.forMonth || forMonth),
         allocations: payloadAllocations,
-        notes,
+        notes: notes || (isPayingRemainingAdvance ? 'Remaining Advance Cleared' : ''),
+        isRemainingAdvance: isPayingRemainingAdvance,
         paymentDate
       });
 
       if (res.data?.success) {
         if (selectedSale) {
-          selectedSale.remainingBalance = res.data.remainingBalance ?? projectedRemaining;
-          if (selectedSale.remainingBalance === 0) {
-            selectedSale.status = 'completed';
+          if (isPayingRemainingAdvance) {
+            selectedSale.remainingAdvance = res.data.remainingAdvance ?? Math.max(0, pendingAdvanceAmount - numAmount);
+            if (selectedSale.remainingAdvance === 0) {
+              selectedSale.remainingAdvanceStatus = 'PAID';
+            }
+          } else {
+            selectedSale.remainingBalance = res.data.remainingBalance ?? projectedRemaining;
+            if (selectedSale.remainingBalance === 0) {
+              selectedSale.status = 'completed';
+            }
           }
         }
         setCreatedPayment(res.data.payment);
@@ -510,6 +568,53 @@ export default function QuickPaymentModal({ customer, activeSales, sales, initia
           </div>
         )}
 
+        {/* PENDING REMAINING ADVANCE NOTIFICATION & QUICK SWITCH */}
+        {pendingAdvanceAmount > 0 && (
+          <div className={`p-3 rounded-2xl border transition flex items-center justify-between gap-3 ${
+            isPayingRemainingAdvance 
+              ? 'bg-amber-950/60 border-amber-500 text-white shadow-lg' 
+              : 'bg-amber-950/20 border-amber-500/30 text-amber-300'
+          }`}>
+            <div className="flex items-center gap-2.5">
+              <span className="w-2.5 h-2.5 rounded-full bg-amber-400 animate-pulse" />
+              <div>
+                <p className="text-xs font-bold text-amber-200">
+                  Baqi Advance: Rs. {pendingAdvanceAmount.toLocaleString()}
+                </p>
+                {selectedSale.remainingAdvancePromiseDate && (
+                  <p className="text-[10px] text-slate-400">
+                    Wada: {new Date(selectedSale.remainingAdvancePromiseDate).toLocaleDateString('en-PK', { day: 'numeric', month: 'short', year: 'numeric' })}
+                  </p>
+                )}
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                const nextState = !isPayingRemainingAdvance;
+                setIsPayingRemainingAdvance(nextState);
+                setCustomRows(null);
+                if (nextState) {
+                  setAmountPaid(pendingAdvanceAmount);
+                  setForMonth('Remaining Advance');
+                  setNotes('Remaining Advance Cleared');
+                } else {
+                  setAmountPaid(defaultAmount);
+                  setForMonth(defaultMonth);
+                  setNotes('');
+                }
+              }}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer ${
+                isPayingRemainingAdvance 
+                  ? 'bg-amber-500 text-slate-950 font-black shadow-md' 
+                  : 'bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40'
+              }`}
+            >
+              {isPayingRemainingAdvance ? '✓ Paying Remaining Advance' : 'Pay Baqi Advance'}
+            </button>
+          </div>
+        )}
+
         {/* Item Summary Card */}
         {selectedSale && (
           <div className="bg-slate-950 p-3.5 rounded-xl border border-slate-800 text-xs space-y-1.5">
@@ -566,6 +671,22 @@ export default function QuickPaymentModal({ customer, activeSales, sales, initia
             </div>
 
             <div className="flex gap-1.5 overflow-x-auto pb-1 scrollbar-thin">
+              {pendingAdvanceAmount > 0 && (
+                <button
+                  type="button"
+                  onClick={() => handleSelectMonth('Remaining Advance')}
+                  className={`shrink-0 px-2.5 py-1 rounded-xl text-[11px] font-mono border transition flex items-center gap-1 cursor-pointer ${
+                    isPayingRemainingAdvance
+                      ? 'bg-amber-500 border-amber-300 text-slate-950 font-bold shadow-md'
+                      : 'bg-amber-950/60 border-amber-500/40 text-amber-300 hover:border-amber-400'
+                  }`}
+                  title={`Baqi Advance: Rs. ${pendingAdvanceAmount.toLocaleString()}`}
+                >
+                  <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
+                  <span>⚡ Baqi Advance</span>
+                  <span className="text-[10px] font-bold">({Math.round(pendingAdvanceAmount / 1000)}k)</span>
+                </button>
+              )}
               {plan.schedule.map((m) => {
                 const isSelected = m.monthKey === forMonth;
                 const isCoveredInMulti = coveredMonthsSet.has(m.monthKey) && activeAllocations.length > 1;
@@ -601,8 +722,67 @@ export default function QuickPaymentModal({ customer, activeSales, sales, initia
           </div>
         )}
 
-        {/* MONTH INSTALLMENT TRACKER CARD */}
-        {selectedMonthObj && (
+        {/* MONTH / ADVANCE INSTALLMENT TRACKER CARD */}
+        {isPayingRemainingAdvance ? (
+          <div className="bg-slate-950 p-3.5 rounded-2xl border border-amber-500/40 space-y-2">
+            <div className="flex justify-between items-center border-b border-slate-800/80 pb-2">
+              <div className="flex items-center gap-2">
+                <DollarSign className="w-4 h-4 text-amber-400" />
+                <span className="text-xs font-bold text-white uppercase tracking-wider">
+                  Target: <span className="text-amber-300 font-mono">Baqi Advance (Remaining Advance)</span>
+                </span>
+              </div>
+              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                ⚡ Pending Advance
+              </span>
+            </div>
+
+            <div className="grid grid-cols-3 gap-2 text-center">
+              <div className="bg-slate-900/90 p-2 rounded-xl border border-slate-800">
+                <span className="text-[10px] text-slate-400 block">Kul Baqi Advance</span>
+                <span className="text-xs font-bold text-amber-400 font-mono">
+                  Rs. {pendingAdvanceAmount.toLocaleString()}
+                </span>
+              </div>
+              <div className="bg-slate-900/90 p-2 rounded-xl border border-slate-800">
+                <span className="text-[10px] text-slate-400 block">Abhi Wasool Raqam</span>
+                <span className="text-xs font-bold text-emerald-400 font-mono">
+                  Rs. {inputAmount.toLocaleString()}
+                </span>
+              </div>
+              <div className="bg-slate-900/90 p-2 rounded-xl border border-slate-800">
+                <span className="text-[10px] text-slate-400 block">Iske Baad Baqi Adv</span>
+                <span className={`text-xs font-black font-mono ${Math.max(0, pendingAdvanceAmount - inputAmount) === 0 ? 'text-emerald-400' : 'text-amber-400'}`}>
+                  {Math.max(0, pendingAdvanceAmount - inputAmount) === 0 ? '✓ NIL (Cleared)' : `Rs. ${(pendingAdvanceAmount - inputAmount).toLocaleString()}`}
+                </span>
+              </div>
+            </div>
+
+            <div className={`p-2 rounded-xl text-[11px] font-medium border flex items-center justify-between gap-2 ${
+              inputAmount >= pendingAdvanceAmount
+                ? 'bg-emerald-950/40 border-emerald-800/60 text-emerald-200'
+                : 'bg-amber-950/40 border-amber-800/60 text-amber-200'
+            }`}>
+              <div className="flex items-center gap-1.5">
+                {inputAmount >= pendingAdvanceAmount ? (
+                  <>
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                    <span>
+                      ✓ <strong>Advance 100% Clear:</strong> Rs. {inputAmount.toLocaleString()} wasool hone par customer ka <strong>Baqi Advance mukammal clear (PAID)</strong> ho jayega!
+                    </span>
+                  </>
+                ) : (
+                  <>
+                    <AlertTriangle className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                    <span>
+                      ⚠️ <strong>Partial Advance:</strong> Rs. {inputAmount.toLocaleString()} ke baad <strong>Rs. {(pendingAdvanceAmount - inputAmount).toLocaleString()}</strong> advance baqi rahega.
+                    </span>
+                  </>
+                )}
+              </div>
+            </div>
+          </div>
+        ) : selectedMonthObj ? (
           <div className="bg-slate-950 p-3.5 rounded-2xl border border-slate-800 space-y-2">
             <div className="flex justify-between items-center border-b border-slate-800/80 pb-2">
               <div className="flex items-center gap-2">
@@ -779,14 +959,25 @@ export default function QuickPaymentModal({ customer, activeSales, sales, initia
               )
             )}
           </div>
-        )}
+        ) : null}
 
         {/* Payment Form */}
         <form onSubmit={handleSubmit} className="space-y-3.5 text-xs">
           <div>
             <div className="flex justify-between items-center mb-1">
               <label className="text-slate-300 font-medium">Total Amount Received / کل وصول کردہ رقم (روپے) *</label>
-              {selectedMonthObj?.remainingAmount > 0 && (
+              {isPayingRemainingAdvance ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCustomRows(null);
+                    setAmountPaid(pendingAdvanceAmount);
+                  }}
+                  className="text-[10px] text-amber-400 hover:text-amber-300 font-bold cursor-pointer"
+                >
+                  ⚡ Set Full Baqi Advance: Rs. {pendingAdvanceAmount.toLocaleString()}
+                </button>
+              ) : selectedMonthObj?.remainingAmount > 0 && (
                 <button
                   type="button"
                   onClick={() => {
@@ -806,10 +997,10 @@ export default function QuickPaymentModal({ customer, activeSales, sales, initia
                 setCustomRows(null);
                 setAmountPaid(e.target.value);
               }}
-              placeholder={`e.g. ${selectedMonthObj?.remainingAmount || selectedSale?.monthlyAmount || 0} (ya multiple months ki total raqam likhein)`}
+              placeholder={isPayingRemainingAdvance ? `Baqi Advance: ${pendingAdvanceAmount}` : `e.g. ${selectedMonthObj?.remainingAmount || selectedSale?.monthlyAmount || 0} (ya multiple months ki total raqam likhein)`}
               required
               min="1"
-              max={currentRemaining > 0 ? currentRemaining : undefined}
+              max={isPayingRemainingAdvance ? pendingAdvanceAmount : (currentRemaining > 0 ? currentRemaining : undefined)}
               className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-white focus:outline-none focus:border-emerald-500 font-mono text-sm font-bold"
             />
           </div>
