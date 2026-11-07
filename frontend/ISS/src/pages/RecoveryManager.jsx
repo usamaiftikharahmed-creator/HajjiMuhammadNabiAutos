@@ -333,7 +333,7 @@ export default function RecoveryManager() {
       `*ماہانہ قسط (Monthly Target):* Rs. ${item.monthlyAmount?.toLocaleString()}\n` +
       `*کل بقایا بیلنس (Remaining Balance):* Rs. ${item.remainingBalance?.toLocaleString()}\n\n` +
       `مہربانی فرما کر اپنی قسط دکان پر جمع کروا دیں یا آن لائن بھیج دیں:\n` +
-      `📲 *03232200325* (ایزی پیسہ - EasyPaisa)\n` +
+      `📲 *03232200326* (ایزی پیسہ - EasyPaisa)\n` +
       `📲 *03030246040* (جاز کیش - JazzCash)\n\n` +
       `📍 *دکان کا پتہ:* شاپ نمبر 14، سیکٹر 16-B، مین گودھرا اسٹاپ، نیو کراچی\n` +
       `شکریہ!`;

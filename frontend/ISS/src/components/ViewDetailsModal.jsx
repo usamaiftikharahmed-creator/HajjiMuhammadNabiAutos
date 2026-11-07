@@ -275,7 +275,7 @@ export default function ViewDetailsModal({ selectedSale, onClose, onRefresh, onO
       `----------------------------\n` +
       `*Shop Address:* Shop # 14, Sector 16-B, Main Godhra Stop New Karachi\n` +
       `*Online Accounts:*\n` +
-      `📲 03232200325 (EasyPaisa)\n` +
+      `📲 03232200326 (EasyPaisa)\n` +
       `📲 03030246040 (JazzCash)\n` +
       `Thank you for your payment!`;
 

@@ -75,7 +75,7 @@ export default function Sidebar({ activeTab, setActiveTab, isOpen, setIsOpen, us
           <div className="space-y-1">
             <div className="flex items-center justify-between text-[11px] bg-slate-900/90 px-2 py-1 rounded-lg border border-slate-800/80">
               <span className="text-emerald-400 font-bold">EasyPaisa</span>
-              <span className="font-mono text-white font-semibold">03232200325</span>
+              <span className="font-mono text-white font-semibold">03232200326</span>
             </div>
             <div className="flex items-center justify-between text-[11px] bg-slate-900/90 px-2 py-1 rounded-lg border border-slate-800/80">
               <span className="text-amber-400 font-bold">JazzCash</span>

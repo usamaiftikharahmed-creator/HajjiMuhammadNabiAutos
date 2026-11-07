@@ -226,7 +226,7 @@ export default function DailyCashManager() {
           <div className="text-[10px] text-slate-600 flex items-center gap-2 mt-0.5">
             <span>📍 <strong>Shop # 14, Sector 16-B, Main Godhra Stop New Karachi</strong></span>
             <span>•</span>
-            <span>📞 <strong>03232200325</strong> (EasyPaisa)</span>
+            <span>📞 <strong>03232200326</strong> (EasyPaisa)</span>
             <span>•</span>
             <span>📞 <strong>03030246040</strong> (JazzCash)</span>
           </div>

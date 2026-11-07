@@ -121,7 +121,7 @@ export default function PaymentReceiptModal({ payment, sale, onClose }) {
       (payment?.notes ? `*Remarks:* ${payment.notes}\n` : '') +
       `*Shop Address:* Shop # 14, Sector 16-B, Main Godhra Stop New Karachi\n` +
       `*Online Accounts:*\n` +
-      `📲 03232200325 (EasyPaisa)\n` +
+      `📲 03232200326 (EasyPaisa)\n` +
       `📲 03030246040 (JazzCash)\n` +
       `_Shukriya aapke bharosay ka!_`;
 

@@ -84,7 +84,7 @@ export default function Login() {
             <div className="grid grid-cols-2 gap-4">
               <div className="p-3.5 rounded-xl bg-slate-900/60 border border-slate-800/80 backdrop-blur-sm">
                 <span className="text-[10px] text-emerald-400 uppercase font-bold tracking-wider block">EasyPaisa Account</span>
-                <p className="font-mono text-sm font-bold text-white mt-0.5">03232200325</p>
+                <p className="font-mono text-sm font-bold text-white mt-0.5">03232200326</p>
               </div>
               <div className="p-3.5 rounded-xl bg-slate-900/60 border border-slate-800/80 backdrop-blur-sm">
                 <span className="text-[10px] text-amber-400 uppercase font-bold tracking-wider block">JazzCash Account</span>

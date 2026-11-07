@@ -134,7 +134,7 @@ export default function DashboardOverview({ setActiveTab, userName }) {
       `السلام علیکم!\n\n` +
       `آپ کی *${sale.itemName || sale.productName || 'آئٹم'}*${regStr} کی ماہانہ قسط *Rs. ${monthlyVal.toLocaleString()}* آج واجب الادا ہے۔\n\n` +
       `مہربانی فرما کر اپنی قسط دکان پر جمع کروا دیں یا آن لائن بھیج دیں:\n` +
-      `📲 *03232200325* (ایزی پیسہ - EasyPaisa)\n` +
+      `📲 *03232200326* (ایزی پیسہ - EasyPaisa)\n` +
       `📲 *03030246040* (جاز کیش - JazzCash)\n\n` +
       `*کل بقایا بیلنس:* Rs. ${remainingVal.toLocaleString()}\n\n` +
       `📍 *دکان کا پتہ:* شاپ نمبر 14، سیکٹر 16-B، مین گودھرا اسٹاپ، نیو کراچی\n` +
@@ -272,7 +272,7 @@ export default function DashboardOverview({ setActiveTab, userName }) {
               <h2 className="text-xl font-bold text-white">Hajji Mohammad Nabi Autos</h2>
               <div className="flex items-center gap-2 text-[11px] bg-slate-800/90 border border-slate-700 px-2.5 py-0.5 rounded-lg text-slate-300">
                 <span className="text-emerald-400 font-bold">EasyPaisa:</span>
-                <span className="font-mono text-white font-semibold">03232200325</span>
+                <span className="font-mono text-white font-semibold">03232200326</span>
                 <span className="text-slate-600">•</span>
                 <span className="text-amber-400 font-bold">JazzCash:</span>
                 <span className="font-mono text-white font-semibold">03030246040</span>

@@ -845,7 +845,7 @@ export default function CustomerLedger() {
       `----------------------------------------\n` +
       `*Shop Address:* Shop # 14, Sector 16-B, Main Godhra Stop New Karachi\n` +
       `*Online Accounts:*\n` +
-      `📲 03232200325 (EasyPaisa)\n` +
+      `📲 03232200326 (EasyPaisa)\n` +
       `📲 03030246040 (JazzCash)\n` +
       `Shukriya!`;
 
@@ -942,7 +942,7 @@ export default function CustomerLedger() {
               <div className="text-[10px] text-slate-600 flex items-center gap-2 mt-0.5">
                 <span>📍 <strong>Shop # 14, Sector 16-B, Main Godhra Stop New Karachi</strong></span>
                 <span>•</span>
-                <span>📞 <strong>03232200325</strong> (EasyPaisa)</span>
+                <span>📞 <strong>03232200326</strong> (EasyPaisa)</span>
                 <span>•</span>
                 <span>📞 <strong>03030246040</strong> (JazzCash)</span>
               </div>

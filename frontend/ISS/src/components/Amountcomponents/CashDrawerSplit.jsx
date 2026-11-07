@@ -447,7 +447,7 @@ export default function CashDrawerSplit({
               <p className="text-xs text-slate-400">Roznamcha Payment Verification Voucher</p>
               <p className="text-[10px] text-blue-400 font-medium">📍 Shop # 14, Sector 16-B, Main Godhra Stop New Karachi (Scan QR for Location)</p>
               <div className="text-[11px] text-slate-400 font-medium flex items-center justify-center gap-2 pt-0.5">
-                <span>📞 <strong className="text-white">03232200325</strong> (EasyPaisa)</span>
+                <span>📞 <strong className="text-white">03232200326</strong> (EasyPaisa)</span>
                 <span>•</span>
                 <span>📞 <strong className="text-white">03030246040</strong> (JazzCash)</span>
               </div>

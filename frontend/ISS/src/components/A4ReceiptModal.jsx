@@ -91,7 +91,7 @@ export default function A4ReceiptModal({ saleData, paymentData, onClose }) {
       `----------------------------------------\n` +
       `*Shop Address:* Shop # 14, Sector 16-B, Main Godhra Stop New Karachi\n` +
       `*Online Accounts:*\n` +
-      `📲 03232200325 (EasyPaisa)\n` +
+      `📲 03232200326 (EasyPaisa)\n` +
       `📲 03030246040 (JazzCash)\n` +
       `Shukriya!`;
 
@@ -283,7 +283,7 @@ export default function A4ReceiptModal({ saleData, paymentData, onClose }) {
             <div className="bg-slate-50 border border-slate-200 rounded-lg p-2 flex flex-wrap justify-between items-center text-[10px] text-slate-700">
               <span className="font-bold text-slate-900">📍 Shop # 14, Sector 16-B, Main Godhra Stop New Karachi | Online Accounts:</span>
               <div className="flex items-center gap-3">
-                <span>EasyPaisa: <strong className="font-mono text-emerald-800 font-bold">03232200325</strong></span>
+                <span>EasyPaisa: <strong className="font-mono text-emerald-800 font-bold">03232200326</strong></span>
                 <span>JazzCash: <strong className="font-mono text-amber-800 font-bold">03030246040</strong></span>
               </div>
             </div>

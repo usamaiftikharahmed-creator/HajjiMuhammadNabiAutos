@@ -214,8 +214,8 @@ export default function NotificationsCenter({ setActiveTab }) {
     }
 
     const message = item.notifType === 'promise' 
-      ? `*وعدہ قسط کی یاددہانی - حاجی محمد نبی آٹوز*\n\nمحترم جناب *${item.customerName}* (${item.customerId})،\nالسلام علیکم!\n\nآپ نے *${item.itemName}* کی قسط کے سلسلے میں *${item.dateStr}* کی تاریخ کا وعدہ فرمایا تھا۔\n*ماہانہ قسط:* Rs. ${item.amount.toLocaleString()}\n\nمہربانی فرما کر اپنی قسط دکان پر جمع کروا دیں یا آن لائن بھیج دیں:\n📲 *03232200325* (ایزی پیسہ - EasyPaisa)\n📲 *03030246040* (جاز کیش - JazzCash)\n\n📍 *دکان کا پتہ:* شاپ نمبر 14، سیکٹر 16-B، مین گودھرا اسٹاپ، نیو کراچی\nشکریہ!`
-      : `*آج کی قسط کی یاددہانی - حاجی محمد نبی آٹوز*\n\nمحترم جناب *${item.customerName}* (${item.customerId})،\nالسلام علیکم!\n\nآپ کی *${item.itemName}* کی ماہانہ قسط *Rs. ${item.amount.toLocaleString()}* آج واجب الادا ہے۔\n\nمہربانی فرما کر اپنی قسط دکان پر جمع کروا دیں یا آن لائن بھیج دیں:\n📲 *03232200325* (ایزی پیسہ - EasyPaisa)\n📲 *03030246040* (جاز کیش - JazzCash)\n\n📍 *دکان کا پتہ:* شاپ نمبر 14، سیکٹر 16-B، مین گودھرا اسٹاپ، نیو کراچی\nشکریہ!`;
+      ? `*وعدہ قسط کی یاددہانی - حاجی محمد نبی آٹوز*\n\nمحترم جناب *${item.customerName}* (${item.customerId})،\nالسلام علیکم!\n\nآپ نے *${item.itemName}* کی قسط کے سلسلے میں *${item.dateStr}* کی تاریخ کا وعدہ فرمایا تھا۔\n*ماہانہ قسط:* Rs. ${item.amount.toLocaleString()}\n\nمہربانی فرما کر اپنی قسط دکان پر جمع کروا دیں یا آن لائن بھیج دیں:\n📲 *03232200326* (ایزی پیسہ - EasyPaisa)\n📲 *03030246040* (جاز کیش - JazzCash)\n\n📍 *دکان کا پتہ:* شاپ نمبر 14، سیکٹر 16-B، مین گودھرا اسٹاپ، نیو کراچی\nشکریہ!`
+      : `*آج کی قسط کی یاددہانی - حاجی محمد نبی آٹوز*\n\nمحترم جناب *${item.customerName}* (${item.customerId})،\nالسلام علیکم!\n\nآپ کی *${item.itemName}* کی ماہانہ قسط *Rs. ${item.amount.toLocaleString()}* آج واجب الادا ہے۔\n\nمہربانی فرما کر اپنی قسط دکان پر جمع کروا دیں یا آن لائن بھیج دیں:\n📲 *03232200326* (ایزی پیسہ - EasyPaisa)\n📲 *03030246040* (جاز کیش - JazzCash)\n\n📍 *دکان کا پتہ:* شاپ نمبر 14، سیکٹر 16-B، مین گودھرا اسٹاپ، نیو کراچی\nشکریہ!`;
 
     window.open(`https://wa.me/${rawPhone}?text=${encodeURIComponent(message)}`, '_blank');
   };
