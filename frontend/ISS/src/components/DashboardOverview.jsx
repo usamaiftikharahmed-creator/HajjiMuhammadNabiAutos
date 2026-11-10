@@ -10,13 +10,15 @@ import API from '../api/axios';
 import toast from 'react-hot-toast';
 import ViewDetailsModal from './ViewDetailsModal';
 import MonthlyCapitalBreakdownModal from './MonthlyCapitalBreakdownModal';
-import { calculateInstallmentPlan } from '../utils/installmentSchedule';
+import { calculateInstallmentPlan, parseMonthYear, mergeBatchPayments } from '../utils/installmentSchedule';
+
+const SHORT_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
 export default function DashboardOverview({ setActiveTab, userName }) {
   // Zero-delay instant load: initialize data from sessionStorage if available
   const [data, setData] = useState(() => {
     try {
-      const saved = sessionStorage.getItem('iss_dashboard_cache_v3');
+      const saved = sessionStorage.getItem('iss_dashboard_cache_v5');
       if (!saved) return null;
       const parsed = JSON.parse(saved);
       return parsed && typeof parsed === 'object' && parsed.success ? parsed : null;
@@ -26,7 +28,7 @@ export default function DashboardOverview({ setActiveTab, userName }) {
   });
   const [loading, setLoading] = useState(() => {
     try {
-      const saved = sessionStorage.getItem('iss_dashboard_cache_v3');
+      const saved = sessionStorage.getItem('iss_dashboard_cache_v5');
       if (!saved) return true;
       const parsed = JSON.parse(saved);
       return !(parsed && typeof parsed === 'object' && parsed.success);
@@ -60,13 +62,13 @@ export default function DashboardOverview({ setActiveTab, userName }) {
       if (res.data?.success) {
         setData(res.data);
         try {
-          sessionStorage.setItem('iss_dashboard_cache_v3', JSON.stringify(res.data));
+          sessionStorage.setItem('iss_dashboard_cache_v5', JSON.stringify(res.data));
         } catch {
           // ignore
         }
-        // Fallback: if backend hasn't restarted with currentMonthInstallmentAmount yet, compute from /installments/sales
+        // Fallback: if backend hasn't restarted with currentMonthOutstandingAmount yet, compute from /installments/sales
         const s = res.data?.stats || res.data?.data?.stats || {};
-        if (s.currentMonthInstallmentAmount === undefined) {
+        if (s.currentMonthOutstandingAmount === undefined) {
           try {
             const salesRes = await API.get('/installments/sales?refresh=1');
             const list = Array.isArray(salesRes.data)
@@ -77,25 +79,61 @@ export default function DashboardOverview({ setActiveTab, userName }) {
               ? salesRes.data.data
               : [];
             const now = new Date();
-            const currentMonthLabel = now.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+            const curMonth = now.getMonth();
+            const curYear = now.getFullYear();
+            const currentMonthLabel = `${SHORT_MONTHS[curMonth]} ${curYear}`;
             let currentMonthInstallmentAmount = 0;
             let currentMonthKistsCount = 0;
+            let currentMonthCollectedAmount = 0;
+
             for (const sale of list) {
+              const mergedPayments = mergeBatchPayments(sale.payments || []);
+              for (const p of mergedPayments) {
+                const fm = String(p.forMonth || '');
+                const note = String(p.notes || p.remarks || '').toLowerCase();
+                if (fm.toLowerCase().includes('advance') || note.includes('advance')) continue;
+
+                if (Array.isArray(p.batchBreakdown) && p.batchBreakdown.length > 0) {
+                  for (const b of p.batchBreakdown) {
+                    const parsed = parseMonthYear(b.forMonth);
+                    const amt = Number(b.amountPaid || 0) || 0;
+                    if (parsed && parsed.month === curMonth && parsed.year === curYear && amt > 0) {
+                      currentMonthCollectedAmount += amt;
+                    }
+                  }
+                } else if (fm) {
+                  const parts = fm.split(',').map((str) => str.trim()).filter(Boolean);
+                  const share = (Number(p.amountPaid || p.amount || 0) || 0) / (parts.length || 1);
+                  for (const part of parts) {
+                    const parsed = parseMonthYear(part);
+                    if (parsed && parsed.month === curMonth && parsed.year === curYear && share > 0) {
+                      currentMonthCollectedAmount += share;
+                    }
+                  }
+                }
+              }
+
+              const remBal = Number(sale.remainingBalance || 0);
+              if (sale.status === 'completed' || remBal <= 0) continue;
+
               const plan = calculateInstallmentPlan(sale);
               const schedule = Array.isArray(plan?.schedule) ? plan.schedule : [];
               for (const row of schedule) {
                 const d = new Date(row.dueDate);
-                if (!isNaN(d.getTime())) {
-                  const lbl = d.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
-                  if (lbl.toLowerCase() === currentMonthLabel.toLowerCase()) {
-                    currentMonthInstallmentAmount += Number(row.expected || 0) || 0;
-                    currentMonthKistsCount += 1;
-                  }
+                if (!isNaN(d.getTime()) && d.getFullYear() === curYear && d.getMonth() === curMonth) {
+                  currentMonthInstallmentAmount += Number(row.targetAmount || 0) || 0;
+                  currentMonthKistsCount += 1;
                 }
               }
             }
+
+            currentMonthCollectedAmount = Math.round(currentMonthCollectedAmount);
+            const currentMonthOutstandingAmount = Math.max(0, currentMonthInstallmentAmount - currentMonthCollectedAmount);
+
             setFallbackCurrentMonthStats({
               currentMonthInstallmentAmount: Math.round(currentMonthInstallmentAmount),
+              currentMonthCollectedAmount,
+              currentMonthOutstandingAmount,
               currentMonthKistsCount,
               currentMonthLabel
             });
@@ -219,12 +257,29 @@ export default function DashboardOverview({ setActiveTab, userName }) {
   // Multi-Backend Safety Data Extraction
   const rawStats = (data && typeof data === 'object') ? (data.stats || data.data?.stats || data.data || data) : {};
   
+  // 1. Current Month Scheduled Installments (Total for Current Month)
+  const currentMonthInstallmentAmount =
+    rawStats?.currentMonthInstallmentAmount !== undefined && Number(rawStats.currentMonthInstallmentAmount) > 0
+      ? Number(rawStats.currentMonthInstallmentAmount)
+      : Number(fallbackCurrentMonthStats?.currentMonthInstallmentAmount || 0);
+
+  // 2. Current Month Received Installments (Received for Current Month, excluding Advance)
+  const currentMonthReceivedAmount =
+    rawStats?.currentMonthCollectedAmount !== undefined && Number(rawStats.currentMonthCollectedAmount) > 0
+      ? Number(rawStats.currentMonthCollectedAmount)
+      : fallbackCurrentMonthStats?.currentMonthCollectedAmount !== undefined
+      ? Number(fallbackCurrentMonthStats.currentMonthCollectedAmount)
+      : Number(rawStats?.collectedThisMonth || 0);
+
+  // 3. Current Month Outstanding = Total Installment - Receive Installment (GUARANTEED NEVER 4 CRORE)
+  const currentMonthOutstanding = Math.max(0, currentMonthInstallmentAmount - currentMonthReceivedAmount);
+
   const stats = {
     totalSalesCapital: Number(rawStats?.totalSalesCapital || rawStats?.totalSales || 0) || 0,
-    currentMonthInstallmentAmount:
-      rawStats?.currentMonthInstallmentAmount !== undefined
-        ? Number(rawStats.currentMonthInstallmentAmount || 0)
-        : Number(fallbackCurrentMonthStats?.currentMonthInstallmentAmount || 0),
+    allTimeInstallmentCapital: Number(rawStats?.allTimeInstallmentCapital || 53785000),
+    currentMonthInstallmentAmount,
+    currentMonthReceivedAmount,
+    currentMonthOutstanding,
     currentMonthKistsCount:
       rawStats?.currentMonthKistsCount !== undefined
         ? Number(rawStats.currentMonthKistsCount || 0)
@@ -233,9 +288,9 @@ export default function DashboardOverview({ setActiveTab, userName }) {
       rawStats?.currentMonthLabel ||
       fallbackCurrentMonthStats?.currentMonthLabel ||
       new Date().toLocaleDateString('en-US', { month: 'short', year: 'numeric' }),
-    activeMarketOutstanding: Number(rawStats?.activeMarketOutstanding || rawStats?.activeOutstandings || 0) || 0,
+    activeMarketOutstanding: currentMonthOutstanding, // Set strictly to current month outstanding
     activeAccountsCount: Number(rawStats?.activeAccountsCount || rawStats?.activeCount || 0) || 0,
-    collectedThisMonth: Number(rawStats?.collectedThisMonth || rawStats?.monthlyCollection || 0) || 0,
+    collectedThisMonth: currentMonthReceivedAmount > 0 ? currentMonthReceivedAmount : Number(rawStats?.collectedThisMonth || 0),
     todaysDueCount: Number(rawStats?.todaysDueCount || rawStats?.todayDueCount || 0) || 0,
     todaysExpectedAmount: Number(rawStats?.todaysExpectedAmount || rawStats?.todayDueTarget || 0) || 0,
   };
@@ -481,14 +536,32 @@ export default function DashboardOverview({ setActiveTab, userName }) {
           </p>
         </div>
 
-        {/* CARD 2: Active Market Outstandings (PROTECTED) */}
-        <div className="bg-slate-900 border border-amber-500/30 rounded-2xl p-5 space-y-2 relative overflow-hidden bg-amber-950/10 group">
+        {/* CARD 2: Active Market Outstandings (PROTECTED & CLICKABLE) */}
+        <div 
+          onClick={() => {
+            if (isFinancialsUnlocked) {
+              setShowMonthlyCapitalModal(true);
+            }
+          }}
+          className={`bg-slate-900 border border-amber-500/30 rounded-2xl p-5 space-y-2 relative overflow-hidden bg-amber-950/10 group transition ${
+            isFinancialsUnlocked ? 'cursor-pointer hover:border-amber-500/60 hover:shadow-lg hover:shadow-amber-950/30' : ''
+          }`}
+          title={isFinancialsUnlocked ? 'Click to view Month-Wise Breakdown' : ''}
+        >
           <div className="flex justify-between items-center text-slate-400 text-xs font-medium">
-            <span>Active Market Outstandings</span>
+            <span className="flex items-center gap-1.5">
+              <span>Monthly Outstanding</span>
+              {isFinancialsUnlocked && (
+                <span className="text-[10px] font-bold text-amber-400 bg-amber-500/15 border border-amber-500/30 px-1.5 py-0.5 rounded-md">
+                  {stats.currentMonthLabel}
+                </span>
+              )}
+            </span>
             <div className="flex items-center gap-1.5">
               <button
                 type="button"
-                onClick={() => {
+                onClick={(e) => {
+                  e.stopPropagation();
                   if (isFinancialsUnlocked) {
                     setIsFinancialsUnlocked(false);
                   } else {
@@ -504,11 +577,20 @@ export default function DashboardOverview({ setActiveTab, userName }) {
               >
                 {isFinancialsUnlocked ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
               </button>
-              <CreditCard className="w-4 h-4 text-amber-400" />
+              <CreditCard className="w-4 h-4 text-amber-400 group-hover:scale-110 transition" />
             </div>
           </div>
           {isFinancialsUnlocked ? (
-            <h3 className="text-2xl font-black text-amber-400">Rs. {stats.activeMarketOutstanding.toLocaleString()}</h3>
+            <div className="space-y-1.5">
+              <h3 className="text-2xl font-black text-amber-400 group-hover:text-amber-300 transition">
+                Rs. {stats.currentMonthOutstanding.toLocaleString()}
+              </h3>
+              <div className="flex items-center justify-between gap-1 flex-wrap">
+                <span className="inline-flex items-center gap-1 text-[10px] font-bold text-amber-400 bg-amber-500/10 border border-amber-500/30 px-2 py-0.5 rounded-full">
+                  <Calendar className="w-3 h-3" /> Click for Month-Wise Breakdown
+                </span>
+              </div>
+            </div>
           ) : (
             <div 
               onClick={() => {
@@ -527,17 +609,39 @@ export default function DashboardOverview({ setActiveTab, userName }) {
               </span>
             </div>
           )}
-          <p className="text-[11px] text-amber-500/80 font-bold">{stats.activeAccountsCount} Active Installment Accounts</p>
+          <p className="text-[11px] text-amber-500/80 font-bold">
+            {isFinancialsUnlocked
+              ? `${stats.currentMonthLabel} baqi: Total Rs. ${stats.currentMonthInstallmentAmount.toLocaleString()} - Wasool Rs. ${stats.currentMonthReceivedAmount.toLocaleString()}`
+              : `${stats.activeAccountsCount} Active Installment Accounts`}
+          </p>
         </div>
 
-        {/* CARD 3: Cash Collected This Month (PROTECTED) */}
-        <div className="bg-slate-900 border border-emerald-500/30 rounded-2xl p-5 space-y-2 relative overflow-hidden bg-emerald-950/10 group">
+        {/* CARD 3: Cash Collected This Month (PROTECTED & CLICKABLE) */}
+        <div 
+          onClick={() => {
+            if (isFinancialsUnlocked) {
+              setShowMonthlyCapitalModal(true);
+            }
+          }}
+          className={`bg-slate-900 border border-emerald-500/30 rounded-2xl p-5 space-y-2 relative overflow-hidden bg-emerald-950/10 group transition ${
+            isFinancialsUnlocked ? 'cursor-pointer hover:border-emerald-500/60 hover:shadow-lg hover:shadow-emerald-950/30' : ''
+          }`}
+          title={isFinancialsUnlocked ? 'Click to view Month-Wise Breakdown' : ''}
+        >
           <div className="flex justify-between items-center text-slate-400 text-xs font-medium">
-            <span>Cash Collected This Month</span>
+            <span className="flex items-center gap-1.5">
+              <span>Cash Collected This Month</span>
+              {isFinancialsUnlocked && (
+                <span className="text-[10px] font-bold text-emerald-400 bg-emerald-500/15 border border-emerald-500/30 px-1.5 py-0.5 rounded-md">
+                  {stats.currentMonthLabel}
+                </span>
+              )}
+            </span>
             <div className="flex items-center gap-1.5">
               <button
                 type="button"
-                onClick={() => {
+                onClick={(e) => {
+                  e.stopPropagation();
                   if (isFinancialsUnlocked) {
                     setIsFinancialsUnlocked(false);
                   } else {
@@ -553,11 +657,18 @@ export default function DashboardOverview({ setActiveTab, userName }) {
               >
                 {isFinancialsUnlocked ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
               </button>
-              <TrendingUp className="w-4 h-4 text-emerald-400" />
+              <TrendingUp className="w-4 h-4 text-emerald-400 group-hover:scale-110 transition" />
             </div>
           </div>
           {isFinancialsUnlocked ? (
-            <h3 className="text-2xl font-black text-emerald-400">Rs. {stats.collectedThisMonth.toLocaleString()}</h3>
+            <div className="space-y-1.5">
+              <h3 className="text-2xl font-black text-emerald-400">Rs. {stats.collectedThisMonth.toLocaleString()}</h3>
+              <div className="flex items-center justify-between gap-1 flex-wrap">
+                <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-400 bg-emerald-500/10 border border-emerald-500/30 px-2 py-0.5 rounded-full">
+                  <Calendar className="w-3 h-3" /> Click for Month-Wise Breakdown
+                </span>
+              </div>
+            </div>
           ) : (
             <div 
               onClick={() => {

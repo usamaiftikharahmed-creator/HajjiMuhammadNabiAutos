@@ -31,29 +31,56 @@ router.get('/overview', protect, async (req, res) => {
     const currentYear = today.getFullYear();
     const currentMonthLabel = `${SHORT_MONTHS[currentMonth]} ${currentYear}`;
 
-    // 1. Fetch Sales and Monthly Collection in Parallel with DB-level Aggregation
-    const startOfMonth = new Date(currentYear, currentMonth, 1);
-    const endOfMonth = new Date(currentYear, currentMonth + 1, 0, 23, 59, 59);
-
-    const [rawSales, paymentAgg] = await Promise.all([
+    // 1. Fetch Sales and Payments in Parallel
+    const [rawSales, allPayments] = await Promise.all([
       InstallmentSale.find()
         .populate('customer', 'name customerId phone phone2 cnic address')
         .sort({ createdAt: -1 })
         .lean(),
-      Payment.aggregate([
-        { $match: { createdAt: { $gte: startOfMonth, $lte: endOfMonth } } },
-        { $group: { _id: null, total: { $sum: '$amountPaid' } } }
-      ])
+      Payment.find().lean()
     ]);
 
-    const collectedThisMonth = paymentAgg?.[0]?.total || 0;
+    // 2. Calculate Current Month Collected Installments (by forMonth / batchBreakdown, excluding Advance)
+    let currentMonthCollectedAmount = 0;
+    const paidSaleIdsInCurrentMonth = new Set();
+    const targetMonthLower = currentMonthLabel.toLowerCase();
 
-    // 2. Normalize Sales Data & Calculate Current Month Installment Amount
-    let totalSalesCapital = 0;
+    for (const p of (allPayments || [])) {
+      const fm = String(p.forMonth || '');
+      const note = String(p.notes || p.remarks || '').toLowerCase();
+      if (fm.toLowerCase().includes('advance') || note.includes('advance')) continue;
+
+      if (Array.isArray(p.batchBreakdown) && p.batchBreakdown.length > 0) {
+        for (const b of p.batchBreakdown) {
+          const m = String(b.forMonth || '').trim();
+          if (!m || m.toLowerCase().includes('advance')) continue;
+          if (m.toLowerCase() === targetMonthLower) {
+            const amt = Number(b.amountPaid || 0) || 0;
+            if (amt > 0) {
+              currentMonthCollectedAmount += amt;
+              if (p.installmentSale) paidSaleIdsInCurrentMonth.add(String(p.installmentSale));
+            }
+          }
+        }
+      } else if (fm) {
+        const parts = fm.split(',').map(s => s.trim()).filter(Boolean);
+        const share = (Number(p.amountPaid || 0) || 0) / (parts.length || 1);
+        for (const m of parts) {
+          if (m.toLowerCase() === targetMonthLower && share > 0) {
+            currentMonthCollectedAmount += share;
+            if (p.installmentSale) paidSaleIdsInCurrentMonth.add(String(p.installmentSale));
+          }
+        }
+      }
+    }
+    currentMonthCollectedAmount = Math.round(currentMonthCollectedAmount);
+
+    // 3. Normalize Sales Data & Calculate Current Month Installment Amount (Active Accounts Only)
+    let allTimeInstallmentCapital = 0;
+    let allTimeRemainingBalance = 0;
     let currentMonthInstallmentAmount = 0;
     let currentMonthKistsCount = 0;
     let currentMonthBookedCapital = 0;
-    let activeMarketOutstanding = 0;
     let activeAccountsCount = 0;
 
     const allSales = (rawSales || []).map(sale => {
@@ -66,10 +93,11 @@ router.get('/overview', protect, async (req, res) => {
       const advance = Number(sale.totalAdvance || sale.advancePayment || 0);
       const installmentOnlyCapital = Math.max(0, total - advance);
       const remaining = Number(sale.remainingBalance || 0);
+      const isActive = sale.status !== 'completed' && remaining > 0;
 
-      totalSalesCapital += installmentOnlyCapital;
-      if (sale.status !== 'completed' && remaining > 0) {
-        activeMarketOutstanding += remaining;
+      allTimeInstallmentCapital += installmentOnlyCapital;
+      if (isActive) {
+        allTimeRemainingBalance += remaining;
         activeAccountsCount++;
       }
 
@@ -79,23 +107,25 @@ router.get('/overview', protect, async (req, res) => {
         currentMonthBookedCapital += installmentOnlyCapital;
       }
 
-      // Calculate scheduled installment falling in current month
-      const monthlyAmt = Number(sale.monthlyAmount) || 1;
-      const totMonths = Number(sale.totalMonths) || Math.max(1, Math.ceil(installmentOnlyCapital / monthlyAmt));
-      const dueDay = Number(sale.dueDateDay) || 5;
-      let allocated = 0;
-      for (let i = 0; i < totMonths; i++) {
-        const dueDate = new Date(sDate.getFullYear(), sDate.getMonth() + 1 + i, dueDay);
-        let target = monthlyAmt;
-        if (allocated + target > installmentOnlyCapital) {
-          target = Math.max(0, installmentOnlyCapital - allocated);
-        }
-        allocated += target;
-        if (target <= 0) break;
+      // Calculate scheduled installment falling in current month (only for active accounts)
+      if (isActive) {
+        const monthlyAmt = Number(sale.monthlyAmount) || 1;
+        const totMonths = Number(sale.totalMonths) || Math.max(1, Math.ceil(installmentOnlyCapital / monthlyAmt));
+        const dueDay = Number(sale.dueDateDay) || 5;
+        let allocated = 0;
+        for (let i = 0; i < totMonths; i++) {
+          const dueDate = new Date(sDate.getFullYear(), sDate.getMonth() + 1 + i, dueDay);
+          let target = monthlyAmt;
+          if (allocated + target > installmentOnlyCapital) {
+            target = Math.max(0, installmentOnlyCapital - allocated);
+          }
+          allocated += target;
+          if (target <= 0) break;
 
-        if (dueDate.getFullYear() === currentYear && dueDate.getMonth() === currentMonth) {
-          currentMonthInstallmentAmount += target;
-          currentMonthKistsCount += 1;
+          if (dueDate.getFullYear() === currentYear && dueDate.getMonth() === currentMonth) {
+            currentMonthInstallmentAmount += target;
+            currentMonthKistsCount += 1;
+          }
         }
       }
 
@@ -112,6 +142,15 @@ router.get('/overview', protect, async (req, res) => {
         customerPhone: phone
       };
     });
+
+    const currentMonthOutstandingAmount = Math.max(0, currentMonthInstallmentAmount - currentMonthCollectedAmount);
+    const currentMonthPaidKistsCount = paidSaleIdsInCurrentMonth.size;
+    const currentMonthPendingKistsCount = Math.max(0, currentMonthKistsCount - currentMonthPaidKistsCount);
+
+    // Map top-level card stats to Current Month (auto-switches every month, e.g. Nov 2026 -> Dec 2026 on 1st Dec)
+    const totalSalesCapital = currentMonthInstallmentAmount;
+    const activeMarketOutstanding = currentMonthOutstandingAmount;
+    const collectedThisMonth = currentMonthCollectedAmount;
 
     // 4. TODAY'S DUE INSTALLMENTS FILTER (FIXED LOGIC)
     const todaysDue = allSales.filter(sale => {
@@ -188,12 +227,18 @@ router.get('/overview', protect, async (req, res) => {
       stats: {
         totalSalesCapital,
         currentMonthInstallmentAmount,
+        currentMonthCollectedAmount,
+        currentMonthOutstandingAmount,
         currentMonthKistsCount,
+        currentMonthPaidKistsCount,
+        currentMonthPendingKistsCount,
         currentMonthBookedCapital,
         currentMonthLabel,
         activeMarketOutstanding,
         collectedThisMonth,
         activeAccountsCount,
+        allTimeInstallmentCapital,
+        allTimeRemainingBalance,
         todaysDueCount: todaysDue.length,
         todaysExpectedAmount,
         promiseAlertsCount: promiseAlerts.length

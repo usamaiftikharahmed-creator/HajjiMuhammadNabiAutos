@@ -148,7 +148,7 @@ export const calculateInstallmentPlan = (sale, customPayments = null) => {
       return; // Skip advance payment at booking
     }
 
-    if (Array.isArray(p.batchBreakdown) && p.batchBreakdown.length > 1) {
+    if (Array.isArray(p.batchBreakdown) && p.batchBreakdown.length > 0) {
       p.batchBreakdown.forEach((b) => {
         assignSingleMonthItem(b.forMonth, Number(b.amountPaid || 0), p);
       });
@@ -156,6 +156,14 @@ export const calculateInstallmentPlan = (sale, customPayments = null) => {
     }
 
     const paidVal = Number(p.amountPaid || p.amount || 0);
+    if (rawMonth.includes(',')) {
+      const parts = rawMonth.split(',').map((s) => s.trim()).filter(Boolean);
+      if (parts.length > 1) {
+        const share = paidVal / parts.length;
+        parts.forEach((part) => assignSingleMonthItem(part, share, p));
+        return;
+      }
+    }
     assignSingleMonthItem(rawMonth, paidVal, p);
   });
 
