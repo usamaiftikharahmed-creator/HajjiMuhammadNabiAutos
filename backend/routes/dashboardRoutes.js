@@ -19,7 +19,7 @@ export const invalidateDashboardCache = () => {
 router.get('/overview', protect, async (req, res) => {
   try {
     const now = Date.now();
-    if (cachedDashboard && (now - lastDashboardCacheTime) < DASHBOARD_CACHE_TTL) {
+    if (!req.query.refresh && cachedDashboard && (now - lastDashboardCacheTime) < DASHBOARD_CACHE_TTL) {
       return res.status(200).json(cachedDashboard);
     }
 
@@ -57,9 +57,11 @@ router.get('/overview', protect, async (req, res) => {
       const phone = cust.phone || sale.phone || '';
 
       const total = Number(sale.totalAmount || 0);
+      const advance = Number(sale.totalAdvance || sale.advancePayment || 0);
+      const installmentOnlyCapital = Math.max(0, total - advance);
       const remaining = Number(sale.remainingBalance || 0);
 
-      totalSalesCapital += total;
+      totalSalesCapital += installmentOnlyCapital;
       if (sale.status !== 'completed' && remaining > 0) {
         activeMarketOutstanding += remaining;
         activeAccountsCount++;

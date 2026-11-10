@@ -14,7 +14,7 @@ export default function DashboardOverview({ setActiveTab, userName }) {
   // Zero-delay instant load: initialize data from sessionStorage if available
   const [data, setData] = useState(() => {
     try {
-      const saved = sessionStorage.getItem('iss_dashboard_cache');
+      const saved = sessionStorage.getItem('iss_dashboard_cache_v2');
       if (!saved) return null;
       const parsed = JSON.parse(saved);
       return parsed && typeof parsed === 'object' && parsed.success ? parsed : null;
@@ -24,7 +24,7 @@ export default function DashboardOverview({ setActiveTab, userName }) {
   });
   const [loading, setLoading] = useState(() => {
     try {
-      const saved = sessionStorage.getItem('iss_dashboard_cache');
+      const saved = sessionStorage.getItem('iss_dashboard_cache_v2');
       if (!saved) return true;
       const parsed = JSON.parse(saved);
       return !(parsed && typeof parsed === 'object' && parsed.success);
@@ -52,11 +52,11 @@ export default function DashboardOverview({ setActiveTab, userName }) {
       setLoading(true);
     }
     try {
-      const res = await API.get('/dashboard/overview');
+      const res = await API.get('/dashboard/overview?refresh=1');
       if (res.data?.success) {
         setData(res.data);
         try {
-          sessionStorage.setItem('iss_dashboard_cache', JSON.stringify(res.data));
+          sessionStorage.setItem('iss_dashboard_cache_v2', JSON.stringify(res.data));
         } catch {
           // ignore
         }
@@ -385,7 +385,7 @@ export default function DashboardOverview({ setActiveTab, userName }) {
               </span>
             </div>
           )}
-          <p className="text-[11px] text-slate-500">Cumulative sale volume created</p>
+          <p className="text-[11px] text-slate-500">Total installment capital (excluding advance)</p>
         </div>
 
         {/* CARD 2: Active Market Outstandings (PROTECTED) */}
