@@ -127,6 +127,14 @@ export default function DashboardOverview({ setActiveTab, userName }) {
               }
             }
 
+            let allTimeRemainingBalance = 0;
+            for (const sale of list) {
+              const remBal = Number(sale.remainingBalance || 0);
+              if (sale.status !== 'completed' && remBal > 0) {
+                allTimeRemainingBalance += remBal;
+              }
+            }
+
             currentMonthCollectedAmount = Math.round(currentMonthCollectedAmount);
             const currentMonthOutstandingAmount = Math.max(0, currentMonthInstallmentAmount - currentMonthCollectedAmount);
 
@@ -135,7 +143,8 @@ export default function DashboardOverview({ setActiveTab, userName }) {
               currentMonthCollectedAmount,
               currentMonthOutstandingAmount,
               currentMonthKistsCount,
-              currentMonthLabel
+              currentMonthLabel,
+              allTimeRemainingBalance: Math.round(allTimeRemainingBalance)
             });
           } catch {
             // ignore fallback error
@@ -274,9 +283,18 @@ export default function DashboardOverview({ setActiveTab, userName }) {
   // 3. Current Month Outstanding = Total Installment - Receive Installment (GUARANTEED NEVER 4 CRORE)
   const currentMonthOutstanding = Math.max(0, currentMonthInstallmentAmount - currentMonthReceivedAmount);
 
+  // 4. All-Time Total Market Outstanding (Total amount yet to collect from people across all accounts)
+  const allTimeMarketOutstanding =
+    Number(rawStats?.allTimeRemainingBalance || 0) > 0
+      ? Number(rawStats.allTimeRemainingBalance)
+      : Number(fallbackCurrentMonthStats?.allTimeRemainingBalance || 0) > 0
+      ? Number(fallbackCurrentMonthStats.allTimeRemainingBalance)
+      : Number(rawStats?.activeMarketOutstanding || 0);
+
   const stats = {
     totalSalesCapital: Number(rawStats?.totalSalesCapital || rawStats?.totalSales || 0) || 0,
     allTimeInstallmentCapital: Number(rawStats?.allTimeInstallmentCapital || 53785000),
+    allTimeRemainingBalance: allTimeMarketOutstanding,
     currentMonthInstallmentAmount,
     currentMonthReceivedAmount,
     currentMonthOutstanding,
@@ -447,7 +465,7 @@ export default function DashboardOverview({ setActiveTab, userName }) {
       </div>
 
       {/* 2. LIVE BUSINESS STATS CARDS */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
         
         {/* CARD 1: Total Sales Capital (PROTECTED & CLICKABLE FOR MONTH-WISE BREAKDOWN) */}
         <div
@@ -536,7 +554,7 @@ export default function DashboardOverview({ setActiveTab, userName }) {
           </p>
         </div>
 
-        {/* CARD 2: Active Market Outstandings (PROTECTED & CLICKABLE) */}
+        {/* CARD 2: Monthly Outstanding (PROTECTED & CLICKABLE) */}
         <div 
           onClick={() => {
             if (isFinancialsUnlocked) {
@@ -613,6 +631,82 @@ export default function DashboardOverview({ setActiveTab, userName }) {
             {isFinancialsUnlocked
               ? `${stats.currentMonthLabel} baqi: Total Rs. ${stats.currentMonthInstallmentAmount.toLocaleString()} - Wasool Rs. ${stats.currentMonthReceivedAmount.toLocaleString()}`
               : `${stats.activeAccountsCount} Active Installment Accounts`}
+          </p>
+        </div>
+
+        {/* CARD 3: Total Market Outstanding (PROTECTED) */}
+        <div 
+          onClick={() => {
+            if (isFinancialsUnlocked) {
+              if (setActiveTab) setActiveTab('ledger');
+            }
+          }}
+          className={`bg-slate-900 border border-rose-500/30 rounded-2xl p-5 space-y-2 relative overflow-hidden bg-rose-950/10 group transition ${
+            isFinancialsUnlocked ? 'cursor-pointer hover:border-rose-500/60 hover:shadow-lg hover:shadow-rose-950/30' : ''
+          }`}
+          title={isFinancialsUnlocked ? 'Click to open Customer Ledger' : ''}
+        >
+          <div className="flex justify-between items-center text-slate-400 text-xs font-medium">
+            <span className="flex items-center gap-1.5">
+              <span>Total Market Outstanding</span>
+              <span className="text-[10px] font-bold text-rose-400 bg-rose-500/15 border border-rose-500/30 px-1.5 py-0.5 rounded-md">
+                Kul Udhaar
+              </span>
+            </span>
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (isFinancialsUnlocked) {
+                    setIsFinancialsUnlocked(false);
+                  } else {
+                    setPasswordError('');
+                    setAdminPasswordInput('');
+                    setShowPasswordModal(true);
+                  }
+                }}
+                className={`p-1 rounded-lg transition cursor-pointer ${
+                  isFinancialsUnlocked ? 'text-emerald-400 hover:bg-emerald-500/20' : 'text-slate-500 hover:text-rose-400 hover:bg-slate-800'
+                }`}
+                title={isFinancialsUnlocked ? 'Click to hide' : 'Click to view (Admin Password Required)'}
+              >
+                {isFinancialsUnlocked ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+              </button>
+              <Wallet className="w-4 h-4 text-rose-400 group-hover:scale-110 transition" />
+            </div>
+          </div>
+          {isFinancialsUnlocked ? (
+            <div className="space-y-1.5">
+              <h3 className="text-2xl font-black text-rose-400 group-hover:text-rose-300 transition">
+                Rs. {stats.allTimeRemainingBalance.toLocaleString()}
+              </h3>
+              <div className="flex items-center justify-between gap-1 flex-wrap">
+                <span className="inline-flex items-center gap-1 text-[10px] font-bold text-rose-400 bg-rose-500/10 border border-rose-500/30 px-2 py-0.5 rounded-full">
+                  Total Market Balance
+                </span>
+              </div>
+            </div>
+          ) : (
+            <div 
+              onClick={() => {
+                setPasswordError('');
+                setAdminPasswordInput('');
+                setShowPasswordModal(true);
+              }}
+              className="flex items-center gap-2 cursor-pointer select-none py-0.5"
+              title="Click to view with Admin Password"
+            >
+              <h3 className="text-2xl font-black tracking-widest text-slate-500 hover:text-rose-300 font-mono transition">
+                Rs. ••••••••
+              </h3>
+              <span className="text-[10px] bg-slate-800 text-slate-400 hover:text-rose-300 px-2 py-0.5 rounded-full border border-slate-700 flex items-center gap-1">
+                <Lock className="w-2.5 h-2.5" /> Locked
+              </span>
+            </div>
+          )}
+          <p className="text-[11px] text-rose-400/80 font-bold">
+            {stats.activeAccountsCount} Accounts se kul collect karna baqi hai
           </p>
         </div>
 
