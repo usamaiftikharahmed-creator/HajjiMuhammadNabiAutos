@@ -34,6 +34,7 @@ export default function MonthlyCapitalBreakdownModal({ onClose, onSelectSale }) 
   }, []);
 
   const [rangePreset, setRangePreset] = useState('LAST_5'); // 'LAST_5' | 'CURRENT' | 'LAST_12' | 'ALL' | 'CUSTOM'
+  const [topCardsMode, setTopCardsMode] = useState('SINGLE'); // 'SINGLE' | 'RANGE'
   const [singleMonth, setSingleMonth] = useState(currentMonthYM); // YYYY-MM quick single-month selector
   const [fromMonth, setFromMonth] = useState(defaultFromYM); // YYYY-MM
   const [toMonth, setToMonth] = useState(defaultToYM);     // YYYY-MM
@@ -207,18 +208,22 @@ export default function MonthlyCapitalBreakdownModal({ onClose, onSelectSale }) 
       const start = new Date(now.getFullYear(), now.getMonth() - 5, 1);
       setFromMonth(toYearMonthStr(start));
       setToMonth(toYearMonthStr(now));
+      setTopCardsMode('RANGE');
     } else if (preset === 'CURRENT') {
       const cur = toYearMonthStr(now);
       setSingleMonth(cur);
       setFromMonth(cur);
       setToMonth(cur);
+      setTopCardsMode('SINGLE');
     } else if (preset === 'LAST_12') {
       const start = new Date(now.getFullYear(), now.getMonth() - 11, 1);
       setFromMonth(toYearMonthStr(start));
       setToMonth(toYearMonthStr(now));
+      setTopCardsMode('RANGE');
     } else if (preset === 'ALL') {
       setFromMonth('');
       setToMonth('');
+      setTopCardsMode('RANGE');
     }
   };
 
@@ -246,6 +251,40 @@ export default function MonthlyCapitalBreakdownModal({ onClose, onSelectSale }) 
     });
   }, [monthlyData, fromMonth, toMonth, monthSearch]);
 
+  // Combined Range Totals across all filtered months
+  const rangeTotals = useMemo(() => {
+    return filteredMonths.reduce(
+      (acc, m) => {
+        acc.targetAmount += Number(m.targetAmount || 0);
+        acc.paidAmount += Number(m.paidAmount || 0);
+        acc.remainingAmount += Number(m.remainingAmount || 0);
+        acc.accountsCount += Number(m.accountsCount || 0);
+        acc.clearedCount += Number(m.clearedCount || 0);
+        acc.shortCount += Number(m.shortCount || 0);
+        acc.unpaidCount += Number(m.unpaidCount || 0);
+        return acc;
+      },
+      {
+        targetAmount: 0,
+        paidAmount: 0,
+        remainingAmount: 0,
+        accountsCount: 0,
+        clearedCount: 0,
+        shortCount: 0,
+        unpaidCount: 0
+      }
+    );
+  }, [filteredMonths]);
+
+  // Range Display Name (e.g. 'Jan 2026 – Nov 2026')
+  const rangeDisplayName = useMemo(() => {
+    if (filteredMonths.length === 0) return 'Selected Range';
+    if (filteredMonths.length === 1) return filteredMonths[0].monthKey;
+    const oldest = filteredMonths[filteredMonths.length - 1];
+    const newest = filteredMonths[0];
+    return `${oldest.monthKey} – ${newest.monthKey}`;
+  }, [filteredMonths]);
+
   // Focused Single Month Stats (if user picked 1 month, show that month in top cards; otherwise show Current Month)
   const focusMonthStats = useMemo(() => {
     if (fromMonth && toMonth && fromMonth === toMonth) {
@@ -254,7 +293,10 @@ export default function MonthlyCapitalBreakdownModal({ onClose, onSelectSale }) 
     return monthlyData.find((m) => m.monthKey === currentMonthKey) || filteredMonths[0] || null;
   }, [monthlyData, fromMonth, toMonth, currentMonthKey, filteredMonths]);
 
-  const focusLabel = focusMonthStats?.monthKey || currentMonthKey;
+  const singleMonthLabel = focusMonthStats?.monthKey || currentMonthKey;
+
+  // Decide whether top cards display Range Totals or Single Month
+  const isShowingRange = topCardsMode === 'RANGE' && filteredMonths.length > 1;
 
   const handleToggleMonth = (monthKey) => {
     if (expandedMonthKey === monthKey) {
@@ -279,7 +321,7 @@ export default function MonthlyCapitalBreakdownModal({ onClose, onSelectSale }) 
               <h3 className="text-base sm:text-lg font-extrabold text-white flex items-center gap-2 flex-wrap">
                 <span>Month-Wise Installments & Outstanding</span>
                 <span className="text-xs font-semibold text-blue-400 bg-blue-500/10 px-2.5 py-0.5 rounded-full border border-blue-500/30">
-                  Sirf 1-1 Mahine Ka Hisaab
+                  {isShowingRange ? `Selected Range (${filteredMonths.length} Months)` : 'Sirf 1-1 Mahine Ka Hisaab'}
                 </span>
               </h3>
               <p className="text-xs text-slate-400 mt-0.5">
@@ -295,60 +337,114 @@ export default function MonthlyCapitalBreakdownModal({ onClose, onSelectSale }) 
           </button>
         </div>
 
-        {/* Top Summary Cards: Always 1 Single Month (Current Month or Selected Single Month) */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 shrink-0">
-          {/* Card 1: Month Total Installments */}
-          <div className="bg-blue-950/30 border border-blue-500/40 rounded-2xl p-3.5 space-y-1">
-            <div className="flex items-center justify-between">
-              <span className="text-[11px] text-blue-300 font-bold">
-                {focusLabel} Total Installments
+        {/* Top Summary Mode Switcher & Cards */}
+        <div className="space-y-2 shrink-0">
+          {filteredMonths.length > 1 && (
+            <div className="flex items-center justify-between gap-2 flex-wrap text-xs">
+              <span className="text-slate-400 font-medium">
+                {isShowingRange ? (
+                  <span>
+                    Range Totals for <strong className="text-blue-400">{rangeDisplayName}</strong> ({filteredMonths.length} Months Combined):
+                  </span>
+                ) : (
+                  <span>
+                    Current View: Single Month <strong className="text-blue-400">{singleMonthLabel}</strong>
+                  </span>
+                )}
               </span>
-              <span className="text-[10px] bg-blue-500/20 text-blue-300 px-2 py-0.5 rounded-full font-bold">
-                {focusMonthStats?.accountsCount || 0} Customers
-              </span>
-            </div>
-            <p className="text-lg sm:text-xl font-black text-blue-400 font-mono">
-              Rs. {(focusMonthStats?.targetAmount || 0).toLocaleString()}
-            </p>
-            <span className="text-[10px] text-slate-400 block">
-              Sirf {focusLabel} ki 1-1 mahine ki kist (Advance shamil nahi)
-            </span>
-          </div>
 
-          {/* Card 2: Month Outstanding (Baqi) */}
-          <div className="bg-amber-950/20 border border-amber-500/40 rounded-2xl p-3.5 space-y-1">
-            <div className="flex items-center justify-between">
-              <span className="text-[11px] text-amber-300 font-bold">
-                {focusLabel} Outstanding (Baqi)
-              </span>
-              <span className="text-[10px] bg-amber-500/20 text-amber-300 px-2 py-0.5 rounded-full font-bold">
-                {(focusMonthStats?.unpaidCount || 0) + (focusMonthStats?.shortCount || 0)} Pending
-              </span>
+              <div className="flex items-center gap-1 bg-slate-950 p-1 rounded-xl border border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => setTopCardsMode('SINGLE')}
+                  className={`px-3 py-1 rounded-lg text-[11px] font-bold transition cursor-pointer ${
+                    !isShowingRange
+                      ? 'bg-blue-600 text-white shadow'
+                      : 'text-slate-400 hover:text-white'
+                  }`}
+                >
+                  Only {singleMonthLabel}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setTopCardsMode('RANGE')}
+                  className={`px-3 py-1 rounded-lg text-[11px] font-bold transition cursor-pointer ${
+                    isShowingRange
+                      ? 'bg-blue-600 text-white shadow'
+                      : 'text-slate-400 hover:text-white'
+                  }`}
+                >
+                  Selected Range ({filteredMonths.length} Months Total)
+                </button>
+              </div>
             </div>
-            <p className="text-lg sm:text-xl font-black text-amber-400 font-mono">
-              Rs. {(focusMonthStats?.remainingAmount || 0).toLocaleString()}
-            </p>
-            <span className="text-[10px] text-slate-400 block">
-              Jo {focusLabel} me abhi wasool karna baqi hai (Total - Wasool)
-            </span>
-          </div>
+          )}
 
-          {/* Card 3: Month Wasool Shuda (Collected) */}
-          <div className="bg-emerald-950/20 border border-emerald-500/40 rounded-2xl p-3.5 space-y-1">
-            <div className="flex items-center justify-between">
-              <span className="text-[11px] text-emerald-300 font-bold">
-                {focusLabel} Wasool Shuda (Paid)
-              </span>
-              <span className="text-[10px] bg-emerald-500/20 text-emerald-300 px-2 py-0.5 rounded-full font-bold">
-                {focusMonthStats?.clearedCount || 0} Cleared
+          {/* Top 3 Summary Cards */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            {/* Card 1: Total Installments */}
+            <div className="bg-blue-950/30 border border-blue-500/40 rounded-2xl p-3.5 space-y-1">
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] text-blue-300 font-bold truncate">
+                  {isShowingRange ? `${rangeDisplayName} Total Installments` : `${singleMonthLabel} Total Installments`}
+                </span>
+                <span className="text-[10px] bg-blue-500/20 text-blue-300 px-2 py-0.5 rounded-full font-bold shrink-0">
+                  {isShowingRange ? `${rangeTotals.accountsCount} Kists` : `${focusMonthStats?.accountsCount || 0} Customers`}
+                </span>
+              </div>
+              <p className="text-lg sm:text-xl font-black text-blue-400 font-mono">
+                Rs. {(isShowingRange ? rangeTotals.targetAmount : (focusMonthStats?.targetAmount || 0)).toLocaleString()}
+              </p>
+              <span className="text-[10px] text-slate-400 block truncate">
+                {isShowingRange
+                  ? `${filteredMonths.length} months ki total installments (Advance shamil nahi)`
+                  : `Sirf ${singleMonthLabel} ki 1-1 mahine ki kist (Advance shamil nahi)`}
               </span>
             </div>
-            <p className="text-lg sm:text-xl font-black text-emerald-400 font-mono">
-              Rs. {(focusMonthStats?.paidAmount || 0).toLocaleString()}
-            </p>
-            <span className="text-[10px] text-slate-400 block">
-              Sirf {focusLabel} ki wasool shuda kist
-            </span>
+
+            {/* Card 2: Outstanding (Baqi) */}
+            <div className="bg-amber-950/20 border border-amber-500/40 rounded-2xl p-3.5 space-y-1">
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] text-amber-300 font-bold truncate">
+                  {isShowingRange ? `${rangeDisplayName} Outstanding (Baqi)` : `${singleMonthLabel} Outstanding (Baqi)`}
+                </span>
+                <span className="text-[10px] bg-amber-500/20 text-amber-300 px-2 py-0.5 rounded-full font-bold shrink-0">
+                  {isShowingRange
+                    ? `${rangeTotals.unpaidCount + rangeTotals.shortCount} Pending`
+                    : `${(focusMonthStats?.unpaidCount || 0) + (focusMonthStats?.shortCount || 0)} Pending`}
+                </span>
+              </div>
+              <p className="text-lg sm:text-xl font-black text-amber-400 font-mono">
+                Rs. {(isShowingRange ? rangeTotals.remainingAmount : (focusMonthStats?.remainingAmount || 0)).toLocaleString()}
+              </p>
+              <span className="text-[10px] text-slate-400 block truncate">
+                {isShowingRange
+                  ? `Range me wasool karna baqi: Total Rs. ${rangeTotals.targetAmount.toLocaleString()} - Wasool Rs. ${rangeTotals.paidAmount.toLocaleString()}`
+                  : `Jo ${singleMonthLabel} me abhi wasool karna baqi hai (Total - Wasool)`}
+              </span>
+            </div>
+
+            {/* Card 3: Wasool Shuda (Paid) */}
+            <div className="bg-emerald-950/20 border border-emerald-500/40 rounded-2xl p-3.5 space-y-1">
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] text-emerald-300 font-bold truncate">
+                  {isShowingRange ? `${rangeDisplayName} Wasool Shuda (Paid)` : `${singleMonthLabel} Wasool Shuda (Paid)`}
+                </span>
+                <span className="text-[10px] bg-emerald-500/20 text-emerald-300 px-2 py-0.5 rounded-full font-bold shrink-0">
+                  {isShowingRange
+                    ? `${rangeTotals.clearedCount} Cleared`
+                    : `${focusMonthStats?.clearedCount || 0} Cleared`}
+                </span>
+              </div>
+              <p className="text-lg sm:text-xl font-black text-emerald-400 font-mono">
+                Rs. {(isShowingRange ? rangeTotals.paidAmount : (focusMonthStats?.paidAmount || 0)).toLocaleString()}
+              </p>
+              <span className="text-[10px] text-slate-400 block truncate">
+                {isShowingRange
+                  ? `Selected range (${rangeDisplayName}) ki wasool shuda kist`
+                  : `Sirf ${singleMonthLabel} ki wasool shuda kist`}
+              </span>
+            </div>
           </div>
         </div>
 
@@ -372,6 +468,7 @@ export default function MonthlyCapitalBreakdownModal({ onClose, onSelectSale }) 
                       setRangePreset('SINGLE');
                       setFromMonth(val);
                       setToMonth(val);
+                      setTopCardsMode('SINGLE');
                     }
                   }}
                   className="bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 text-xs text-white font-mono focus:outline-none focus:border-blue-500 cursor-pointer"
@@ -387,6 +484,7 @@ export default function MonthlyCapitalBreakdownModal({ onClose, onSelectSale }) 
                   onChange={(e) => {
                     setRangePreset('CUSTOM');
                     setFromMonth(e.target.value);
+                    setTopCardsMode('RANGE');
                   }}
                   className="bg-slate-900 border border-slate-700 rounded-xl px-2 py-1 text-xs text-white font-mono focus:outline-none focus:border-blue-500 cursor-pointer"
                 />
@@ -397,6 +495,7 @@ export default function MonthlyCapitalBreakdownModal({ onClose, onSelectSale }) 
                   onChange={(e) => {
                     setRangePreset('CUSTOM');
                     setToMonth(e.target.value);
+                    setTopCardsMode('RANGE');
                   }}
                   className="bg-slate-900 border border-slate-700 rounded-xl px-2 py-1 text-xs text-white font-mono focus:outline-none focus:border-blue-500 cursor-pointer"
                 />
