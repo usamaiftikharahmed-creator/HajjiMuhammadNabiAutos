@@ -9,6 +9,7 @@ import {
 import API from '../api/axios';
 import toast from 'react-hot-toast';
 import ViewDetailsModal from './ViewDetailsModal';
+import MonthlyCapitalBreakdownModal from './MonthlyCapitalBreakdownModal';
 
 export default function DashboardOverview({ setActiveTab, userName }) {
   // Zero-delay instant load: initialize data from sessionStorage if available
@@ -37,6 +38,7 @@ export default function DashboardOverview({ setActiveTab, userName }) {
   // Financial Stats Masking & Password Protection State
   const [isFinancialsUnlocked, setIsFinancialsUnlocked] = useState(false);
   const [showPasswordModal, setShowPasswordModal] = useState(false);
+  const [showMonthlyCapitalModal, setShowMonthlyCapitalModal] = useState(false);
   const [adminPasswordInput, setAdminPasswordInput] = useState('');
   const [isVerifyingPassword, setIsVerifyingPassword] = useState(false);
   const [showPasswordText, setShowPasswordText] = useState(false);
@@ -339,14 +341,25 @@ export default function DashboardOverview({ setActiveTab, userName }) {
       {/* 2. LIVE BUSINESS STATS CARDS */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         
-        {/* CARD 1: Total Sales Capital (PROTECTED) */}
-        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 space-y-2 relative overflow-hidden group">
+        {/* CARD 1: Total Sales Capital (PROTECTED & CLICKABLE FOR MONTH-WISE BREAKDOWN) */}
+        <div
+          onClick={() => {
+            if (isFinancialsUnlocked) {
+              setShowMonthlyCapitalModal(true);
+            }
+          }}
+          className={`bg-slate-900 border border-slate-800 rounded-2xl p-5 space-y-2 relative overflow-hidden group transition ${
+            isFinancialsUnlocked ? 'cursor-pointer hover:border-blue-500/50 hover:shadow-lg hover:shadow-blue-950/30' : ''
+          }`}
+          title={isFinancialsUnlocked ? 'Click to view Month-Wise Installment Breakdown' : ''}
+        >
           <div className="flex justify-between items-center text-slate-400 text-xs font-medium">
             <span>Total Sales Capital</span>
             <div className="flex items-center gap-1.5">
               <button
                 type="button"
-                onClick={() => {
+                onClick={(e) => {
+                  e.stopPropagation();
                   if (isFinancialsUnlocked) {
                     setIsFinancialsUnlocked(false);
                   } else {
@@ -362,11 +375,18 @@ export default function DashboardOverview({ setActiveTab, userName }) {
               >
                 {isFinancialsUnlocked ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
               </button>
-              <ArrowUpRight className="w-4 h-4 text-blue-400" />
+              <ArrowUpRight className="w-4 h-4 text-blue-400 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition" />
             </div>
           </div>
           {isFinancialsUnlocked ? (
-            <h3 className="text-2xl font-black text-white">Rs. {stats.totalSalesCapital.toLocaleString()}</h3>
+            <div className="space-y-1">
+              <h3 className="text-2xl font-black text-white group-hover:text-blue-400 transition">
+                Rs. {stats.totalSalesCapital.toLocaleString()}
+              </h3>
+              <span className="inline-flex items-center gap-1 text-[10px] font-bold text-blue-400 bg-blue-500/10 border border-blue-500/30 px-2 py-0.5 rounded-full">
+                <Calendar className="w-3 h-3" /> Click for Month-Wise Breakdown
+              </span>
+            </div>
           ) : (
             <div 
               onClick={() => {
@@ -985,6 +1005,18 @@ export default function DashboardOverview({ setActiveTab, userName }) {
 
           </div>
         </div>
+      )}
+
+      {/* MONTH-WISE INSTALLMENT CAPITAL BREAKDOWN MODAL */}
+      {showMonthlyCapitalModal && (
+        <MonthlyCapitalBreakdownModal
+          onClose={() => setShowMonthlyCapitalModal(false)}
+          totalSalesCapital={stats.totalSalesCapital}
+          onSelectSale={(saleObj) => {
+            setShowMonthlyCapitalModal(false);
+            setSelectedSaleForView(saleObj);
+          }}
+        />
       )}
 
     </div>
