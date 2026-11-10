@@ -16,6 +16,8 @@ export const invalidateDashboardCache = () => {
   lastDashboardCacheTime = 0;
 };
 
+const SHORT_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
 router.get('/overview', protect, async (req, res) => {
   try {
     const now = Date.now();
@@ -27,6 +29,7 @@ router.get('/overview', protect, async (req, res) => {
     const currentDay = today.getDate();
     const currentMonth = today.getMonth();
     const currentYear = today.getFullYear();
+    const currentMonthLabel = `${SHORT_MONTHS[currentMonth]} ${currentYear}`;
 
     // 1. Fetch Sales and Monthly Collection in Parallel with DB-level Aggregation
     const startOfMonth = new Date(currentYear, currentMonth, 1);
@@ -45,8 +48,11 @@ router.get('/overview', protect, async (req, res) => {
 
     const collectedThisMonth = paymentAgg?.[0]?.total || 0;
 
-    // 2. Normalize Sales Data
+    // 2. Normalize Sales Data & Calculate Current Month Installment Amount
     let totalSalesCapital = 0;
+    let currentMonthInstallmentAmount = 0;
+    let currentMonthKistsCount = 0;
+    let currentMonthBookedCapital = 0;
     let activeMarketOutstanding = 0;
     let activeAccountsCount = 0;
 
@@ -65,6 +71,32 @@ router.get('/overview', protect, async (req, res) => {
       if (sale.status !== 'completed' && remaining > 0) {
         activeMarketOutstanding += remaining;
         activeAccountsCount++;
+      }
+
+      // Check if sale was booked in current month
+      const sDate = sale.createdAt ? new Date(sale.createdAt) : new Date();
+      if (sDate.getFullYear() === currentYear && sDate.getMonth() === currentMonth) {
+        currentMonthBookedCapital += installmentOnlyCapital;
+      }
+
+      // Calculate scheduled installment falling in current month
+      const monthlyAmt = Number(sale.monthlyAmount) || 1;
+      const totMonths = Number(sale.totalMonths) || Math.max(1, Math.ceil(installmentOnlyCapital / monthlyAmt));
+      const dueDay = Number(sale.dueDateDay) || 5;
+      let allocated = 0;
+      for (let i = 0; i < totMonths; i++) {
+        const dueDate = new Date(sDate.getFullYear(), sDate.getMonth() + 1 + i, dueDay);
+        let target = monthlyAmt;
+        if (allocated + target > installmentOnlyCapital) {
+          target = Math.max(0, installmentOnlyCapital - allocated);
+        }
+        allocated += target;
+        if (target <= 0) break;
+
+        if (dueDate.getFullYear() === currentYear && dueDate.getMonth() === currentMonth) {
+          currentMonthInstallmentAmount += target;
+          currentMonthKistsCount += 1;
+        }
       }
 
       return {
@@ -155,6 +187,10 @@ router.get('/overview', protect, async (req, res) => {
       success: true,
       stats: {
         totalSalesCapital,
+        currentMonthInstallmentAmount,
+        currentMonthKistsCount,
+        currentMonthBookedCapital,
+        currentMonthLabel,
         activeMarketOutstanding,
         collectedThisMonth,
         activeAccountsCount,

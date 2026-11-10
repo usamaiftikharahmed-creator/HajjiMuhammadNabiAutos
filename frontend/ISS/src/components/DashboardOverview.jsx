@@ -10,12 +10,13 @@ import API from '../api/axios';
 import toast from 'react-hot-toast';
 import ViewDetailsModal from './ViewDetailsModal';
 import MonthlyCapitalBreakdownModal from './MonthlyCapitalBreakdownModal';
+import { calculateInstallmentPlan } from '../utils/installmentSchedule';
 
 export default function DashboardOverview({ setActiveTab, userName }) {
   // Zero-delay instant load: initialize data from sessionStorage if available
   const [data, setData] = useState(() => {
     try {
-      const saved = sessionStorage.getItem('iss_dashboard_cache_v2');
+      const saved = sessionStorage.getItem('iss_dashboard_cache_v3');
       if (!saved) return null;
       const parsed = JSON.parse(saved);
       return parsed && typeof parsed === 'object' && parsed.success ? parsed : null;
@@ -25,7 +26,7 @@ export default function DashboardOverview({ setActiveTab, userName }) {
   });
   const [loading, setLoading] = useState(() => {
     try {
-      const saved = sessionStorage.getItem('iss_dashboard_cache_v2');
+      const saved = sessionStorage.getItem('iss_dashboard_cache_v3');
       if (!saved) return true;
       const parsed = JSON.parse(saved);
       return !(parsed && typeof parsed === 'object' && parsed.success);
@@ -34,6 +35,7 @@ export default function DashboardOverview({ setActiveTab, userName }) {
     }
   });
   const [selectedSaleForView, setSelectedSaleForView] = useState(null);
+  const [fallbackCurrentMonthStats, setFallbackCurrentMonthStats] = useState(null);
 
   // Financial Stats Masking & Password Protection State
   const [isFinancialsUnlocked, setIsFinancialsUnlocked] = useState(false);
@@ -58,9 +60,48 @@ export default function DashboardOverview({ setActiveTab, userName }) {
       if (res.data?.success) {
         setData(res.data);
         try {
-          sessionStorage.setItem('iss_dashboard_cache_v2', JSON.stringify(res.data));
+          sessionStorage.setItem('iss_dashboard_cache_v3', JSON.stringify(res.data));
         } catch {
           // ignore
+        }
+        // Fallback: if backend hasn't restarted with currentMonthInstallmentAmount yet, compute from /installments/sales
+        const s = res.data?.stats || res.data?.data?.stats || {};
+        if (s.currentMonthInstallmentAmount === undefined) {
+          try {
+            const salesRes = await API.get('/installments/sales?refresh=1');
+            const list = Array.isArray(salesRes.data)
+              ? salesRes.data
+              : Array.isArray(salesRes.data?.sales)
+              ? salesRes.data.sales
+              : Array.isArray(salesRes.data?.data)
+              ? salesRes.data.data
+              : [];
+            const now = new Date();
+            const currentMonthLabel = now.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+            let currentMonthInstallmentAmount = 0;
+            let currentMonthKistsCount = 0;
+            for (const sale of list) {
+              const plan = calculateInstallmentPlan(sale);
+              const schedule = Array.isArray(plan?.schedule) ? plan.schedule : [];
+              for (const row of schedule) {
+                const d = new Date(row.dueDate);
+                if (!isNaN(d.getTime())) {
+                  const lbl = d.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+                  if (lbl.toLowerCase() === currentMonthLabel.toLowerCase()) {
+                    currentMonthInstallmentAmount += Number(row.expected || 0) || 0;
+                    currentMonthKistsCount += 1;
+                  }
+                }
+              }
+            }
+            setFallbackCurrentMonthStats({
+              currentMonthInstallmentAmount: Math.round(currentMonthInstallmentAmount),
+              currentMonthKistsCount,
+              currentMonthLabel
+            });
+          } catch {
+            // ignore fallback error
+          }
         }
       }
     } catch (err) {
@@ -180,6 +221,18 @@ export default function DashboardOverview({ setActiveTab, userName }) {
   
   const stats = {
     totalSalesCapital: Number(rawStats?.totalSalesCapital || rawStats?.totalSales || 0) || 0,
+    currentMonthInstallmentAmount:
+      rawStats?.currentMonthInstallmentAmount !== undefined
+        ? Number(rawStats.currentMonthInstallmentAmount || 0)
+        : Number(fallbackCurrentMonthStats?.currentMonthInstallmentAmount || 0),
+    currentMonthKistsCount:
+      rawStats?.currentMonthKistsCount !== undefined
+        ? Number(rawStats.currentMonthKistsCount || 0)
+        : Number(fallbackCurrentMonthStats?.currentMonthKistsCount || 0),
+    currentMonthLabel:
+      rawStats?.currentMonthLabel ||
+      fallbackCurrentMonthStats?.currentMonthLabel ||
+      new Date().toLocaleDateString('en-US', { month: 'short', year: 'numeric' }),
     activeMarketOutstanding: Number(rawStats?.activeMarketOutstanding || rawStats?.activeOutstandings || 0) || 0,
     activeAccountsCount: Number(rawStats?.activeAccountsCount || rawStats?.activeCount || 0) || 0,
     collectedThisMonth: Number(rawStats?.collectedThisMonth || rawStats?.monthlyCollection || 0) || 0,
@@ -351,10 +404,17 @@ export default function DashboardOverview({ setActiveTab, userName }) {
           className={`bg-slate-900 border border-slate-800 rounded-2xl p-5 space-y-2 relative overflow-hidden group transition ${
             isFinancialsUnlocked ? 'cursor-pointer hover:border-blue-500/50 hover:shadow-lg hover:shadow-blue-950/30' : ''
           }`}
-          title={isFinancialsUnlocked ? 'Click to view Month-Wise Installment Breakdown' : ''}
+          title={isFinancialsUnlocked ? 'Click to view Last 5 Months & Calendar Range Installments' : ''}
         >
           <div className="flex justify-between items-center text-slate-400 text-xs font-medium">
-            <span>Total Sales Capital</span>
+            <span className="flex items-center gap-1.5">
+              <span>Installments Capital</span>
+              {isFinancialsUnlocked && (
+                <span className="text-[10px] font-bold text-blue-400 bg-blue-500/15 border border-blue-500/30 px-1.5 py-0.5 rounded-md">
+                  {stats.currentMonthLabel}
+                </span>
+              )}
+            </span>
             <div className="flex items-center gap-1.5">
               <button
                 type="button"
@@ -379,13 +439,22 @@ export default function DashboardOverview({ setActiveTab, userName }) {
             </div>
           </div>
           {isFinancialsUnlocked ? (
-            <div className="space-y-1">
-              <h3 className="text-2xl font-black text-white group-hover:text-blue-400 transition">
-                Rs. {stats.totalSalesCapital.toLocaleString()}
-              </h3>
-              <span className="inline-flex items-center gap-1 text-[10px] font-bold text-blue-400 bg-blue-500/10 border border-blue-500/30 px-2 py-0.5 rounded-full">
-                <Calendar className="w-3 h-3" /> Click for Month-Wise Breakdown
-              </span>
+            <div className="space-y-1.5">
+              <div className="flex items-baseline gap-2 flex-wrap">
+                <h3 className="text-2xl font-black text-white group-hover:text-blue-400 transition">
+                  Rs. {stats.currentMonthInstallmentAmount.toLocaleString()}
+                </h3>
+                {stats.currentMonthKistsCount > 0 && (
+                  <span className="text-[10px] font-bold text-slate-400">
+                    ({stats.currentMonthKistsCount} Kists)
+                  </span>
+                )}
+              </div>
+              <div className="flex items-center justify-between gap-1 flex-wrap">
+                <span className="inline-flex items-center gap-1 text-[10px] font-bold text-blue-400 bg-blue-500/10 border border-blue-500/30 px-2 py-0.5 rounded-full">
+                  <Calendar className="w-3 h-3" /> Last 5 Months & Calendar
+                </span>
+              </div>
             </div>
           ) : (
             <div 
@@ -405,7 +474,11 @@ export default function DashboardOverview({ setActiveTab, userName }) {
               </span>
             </div>
           )}
-          <p className="text-[11px] text-slate-500">Total installment capital (excluding advance)</p>
+          <p className="text-[11px] text-slate-500">
+            {isFinancialsUnlocked
+              ? `${stats.currentMonthLabel} installments (All-Time: Rs. ${stats.totalSalesCapital.toLocaleString()})`
+              : 'Current month installments (excluding advance)'}
+          </p>
         </div>
 
         {/* CARD 2: Active Market Outstandings (PROTECTED) */}

@@ -1,31 +1,52 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import {
   X, Calendar, DollarSign, Users, CheckCircle2, AlertTriangle,
-  Search, ChevronDown, ChevronUp, RefreshCw, TrendingUp, Eye, Filter
+  Search, ChevronDown, ChevronUp, RefreshCw, Eye, Filter
 } from 'lucide-react';
 import API from '../api/axios';
 import { calculateInstallmentPlan } from '../utils/installmentSchedule';
 
 const SHORT_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const LONG_MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+
+// Helper to format YYYY-MM from a Date
+const toYearMonthStr = (d) => {
+  const yr = d.getFullYear();
+  const mo = String(d.getMonth() + 1).padStart(2, '0');
+  return `${yr}-${mo}`;
+};
 
 export default function MonthlyCapitalBreakdownModal({ onClose, onSelectSale, totalSalesCapital }) {
   const [sales, setSales] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [selectedYear, setSelectedYear] = useState('ALL');
+
+  const now = new Date();
+  const currentMonthKey = `${SHORT_MONTHS[now.getMonth()]} ${now.getFullYear()}`;
+
+  // Default range: Last 5 Months + Current Month (e.g. Jun 2026 to Nov 2026)
+  const defaultFromYM = useMemo(() => {
+    const d = new Date(now.getFullYear(), now.getMonth() - 5, 1);
+    return toYearMonthStr(d);
+  }, []);
+  const defaultToYM = useMemo(() => {
+    return toYearMonthStr(now);
+  }, []);
+
+  const [rangePreset, setRangePreset] = useState('LAST_5'); // 'LAST_5' | 'CURRENT' | 'LAST_12' | 'ALL' | 'CUSTOM'
+  const [fromMonth, setFromMonth] = useState(defaultFromYM); // YYYY-MM
+  const [toMonth, setToMonth] = useState(defaultToYM);     // YYYY-MM
   const [monthSearch, setMonthSearch] = useState('');
   const [expandedMonthKey, setExpandedMonthKey] = useState(null);
   const [customerSearch, setCustomerSearch] = useState('');
   const [customerStatusFilter, setCustomerStatusFilter] = useState('ALL'); // ALL | PENDING | CLEARED
-
-  const now = new Date();
-  const currentMonthKey = `${SHORT_MONTHS[now.getMonth()]} ${now.getFullYear()}`;
 
   useEffect(() => {
     let isMounted = true;
     const fetchAllSales = async () => {
       setLoading(true);
       try {
-        const res = await API.get('/installments?refresh=1');
+        // Real endpoint in installmentRoutes.js is /installments/sales
+        const res = await API.get('/installments/sales?refresh=1');
         if (isMounted && res.data?.success && Array.isArray(res.data.sales)) {
           setSales(res.data.sales);
         }
@@ -42,22 +63,60 @@ export default function MonthlyCapitalBreakdownModal({ onClose, onSelectSale, to
   }, []);
 
   // Build month-by-month aggregation across all sales
-  const { monthlyData, yearsList, grandTotals } = useMemo(() => {
+  const { monthlyData, grandTotals } = useMemo(() => {
     const monthMap = new Map();
-    const yearsSet = new Set();
     let totalInstallmentAmount = 0;
     let totalCollectedInstallments = 0;
     let totalPendingInstallments = 0;
 
-    (sales || []).forEach((sale) => {
-      const plan = calculateInstallmentPlan(sale);
-      if (!plan || !Array.isArray(plan.schedule)) return;
+    const ensureBucket = (yearVal, monthVal) => {
+      const monthKey = `${SHORT_MONTHS[monthVal]} ${yearVal}`;
+      const fullMonthName = `${LONG_MONTHS[monthVal]} ${yearVal}`;
+      const ymStr = `${yearVal}-${String(monthVal + 1).padStart(2, '0')}`;
+      const sortKey = yearVal * 100 + monthVal;
+      if (!monthMap.has(monthKey)) {
+        monthMap.set(monthKey, {
+          monthKey,
+          fullMonthName,
+          ymStr,
+          year: yearVal,
+          month: monthVal,
+          sortKey,
+          accountsCount: 0,
+          clearedCount: 0,
+          shortCount: 0,
+          unpaidCount: 0,
+          targetAmount: 0,
+          paidAmount: 0,
+          remainingAmount: 0,
+          bookedSalesCapital: 0,
+          bookedSalesCount: 0,
+          customers: []
+        });
+      }
+      return monthMap.get(monthKey);
+    };
 
+    (sales || []).forEach((sale) => {
       const cust = sale.customer && typeof sale.customer === 'object' ? sale.customer : {};
       const customerName = cust.name || sale.customerName || 'Customer';
       const customerId = cust.customerId || sale.customerId || 'N/A';
       const customerPhone = cust.phone || sale.customerPhone || '';
       const regNumber = sale.registrationNumber || sale.itemRegNumber || '';
+
+      // Track new installment capital booked in sale creation month (excluding advance)
+      const sDate = sale.createdAt ? new Date(sale.createdAt) : new Date();
+      const sTotal = Number(sale.totalAmount || 0);
+      const sAdvance = Number(sale.totalAdvance || sale.advancePayment || 0);
+      const sFinanced = Math.max(0, sTotal - sAdvance);
+      if (sFinanced > 0 && !isNaN(sDate.getTime())) {
+        const bookedBucket = ensureBucket(sDate.getFullYear(), sDate.getMonth());
+        bookedBucket.bookedSalesCapital += sFinanced;
+        bookedBucket.bookedSalesCount += 1;
+      }
+
+      const plan = calculateInstallmentPlan(sale);
+      if (!plan || !Array.isArray(plan.schedule)) return;
 
       plan.schedule.forEach((m) => {
         const target = Number(m.targetAmount || 0);
@@ -67,32 +126,12 @@ export default function MonthlyCapitalBreakdownModal({ onClose, onSelectSale, to
 
         const yearVal = m.dueDate.getFullYear();
         const monthVal = m.dueDate.getMonth();
-        const sortKey = yearVal * 100 + monthVal;
-        yearsSet.add(String(yearVal));
 
         totalInstallmentAmount += target;
         totalCollectedInstallments += paid;
         totalPendingInstallments += remaining;
 
-        if (!monthMap.has(m.monthKey)) {
-          monthMap.set(m.monthKey, {
-            monthKey: m.monthKey,
-            fullMonthName: m.fullMonthName,
-            year: yearVal,
-            month: monthVal,
-            sortKey,
-            accountsCount: 0,
-            clearedCount: 0,
-            shortCount: 0,
-            unpaidCount: 0,
-            targetAmount: 0,
-            paidAmount: 0,
-            remainingAmount: 0,
-            customers: []
-          });
-        }
-
-        const bucket = monthMap.get(m.monthKey);
+        const bucket = ensureBucket(yearVal, monthVal);
         bucket.accountsCount += 1;
         bucket.targetAmount += target;
         bucket.paidAmount += paid;
@@ -123,12 +162,11 @@ export default function MonthlyCapitalBreakdownModal({ onClose, onSelectSale, to
       });
     });
 
-    const sortedMonths = Array.from(monthMap.values()).sort((a, b) => a.sortKey - b.sortKey);
-    const sortedYears = Array.from(yearsSet).sort();
+    // Sort newest-first within range so Current Month and Last 5 Months appear cleanly at the top
+    const sortedMonths = Array.from(monthMap.values()).sort((a, b) => b.sortKey - a.sortKey);
 
     return {
       monthlyData: sortedMonths,
-      yearsList: sortedYears,
       grandTotals: {
         totalInstallmentAmount: totalInstallmentAmount || totalSalesCapital || 0,
         totalCollectedInstallments,
@@ -137,23 +175,37 @@ export default function MonthlyCapitalBreakdownModal({ onClose, onSelectSale, to
     };
   }, [sales, totalSalesCapital]);
 
-  // Auto-expand current month when loaded if present
-  useEffect(() => {
-    if (!loading && monthlyData.length > 0 && expandedMonthKey === null) {
-      const hasCurrent = monthlyData.find((m) => m.monthKey === currentMonthKey);
-      if (hasCurrent) {
-        setExpandedMonthKey(currentMonthKey);
-      }
-    }
-  }, [loading, monthlyData, currentMonthKey, expandedMonthKey]);
-
   const currentMonthStats = useMemo(() => {
     return monthlyData.find((m) => m.monthKey === currentMonthKey) || null;
   }, [monthlyData, currentMonthKey]);
 
+  // Preset Handlers
+  const handleSelectPreset = (preset) => {
+    setRangePreset(preset);
+    if (preset === 'LAST_5') {
+      const start = new Date(now.getFullYear(), now.getMonth() - 5, 1);
+      setFromMonth(toYearMonthStr(start));
+      setToMonth(toYearMonthStr(now));
+    } else if (preset === 'CURRENT') {
+      const cur = toYearMonthStr(now);
+      setFromMonth(cur);
+      setToMonth(cur);
+    } else if (preset === 'LAST_12') {
+      const start = new Date(now.getFullYear(), now.getMonth() - 11, 1);
+      setFromMonth(toYearMonthStr(start));
+      setToMonth(toYearMonthStr(now));
+    } else if (preset === 'ALL') {
+      setFromMonth('');
+      setToMonth('');
+    }
+  };
+
+  // Filtered months based on calendar range & search
   const filteredMonths = useMemo(() => {
     return monthlyData.filter((m) => {
-      if (selectedYear !== 'ALL' && String(m.year) !== selectedYear) return false;
+      if (fromMonth && m.ymStr < fromMonth) return false;
+      if (toMonth && m.ymStr > toMonth) return false;
+
       if (monthSearch.trim()) {
         const q = monthSearch.toLowerCase().trim();
         const matchMonth =
@@ -170,7 +222,22 @@ export default function MonthlyCapitalBreakdownModal({ onClose, onSelectSale, to
       }
       return true;
     });
-  }, [monthlyData, selectedYear, monthSearch]);
+  }, [monthlyData, fromMonth, toMonth, monthSearch]);
+
+  // Totals for the currently selected calendar range
+  const rangeTotals = useMemo(() => {
+    return filteredMonths.reduce(
+      (acc, m) => {
+        acc.targetAmount += m.targetAmount;
+        acc.paidAmount += m.paidAmount;
+        acc.remainingAmount += m.remainingAmount;
+        acc.bookedSalesCapital += m.bookedSalesCapital;
+        acc.accountsCount += m.accountsCount;
+        return acc;
+      },
+      { targetAmount: 0, paidAmount: 0, remainingAmount: 0, bookedSalesCapital: 0, accountsCount: 0 }
+    );
+  }, [filteredMonths]);
 
   const handleToggleMonth = (monthKey) => {
     if (expandedMonthKey === monthKey) {
@@ -193,13 +260,13 @@ export default function MonthlyCapitalBreakdownModal({ onClose, onSelectSale, to
             </div>
             <div>
               <h3 className="text-base sm:text-lg font-extrabold text-white flex items-center gap-2 flex-wrap">
-                <span>Month-Wise Installment Capital Breakdown</span>
+                <span>Month-Wise Installments Breakdown</span>
                 <span className="text-xs font-semibold text-blue-400 bg-blue-500/10 px-2.5 py-0.5 rounded-full border border-blue-500/30">
                   Excluding Advance
                 </span>
               </h3>
               <p className="text-xs text-slate-400 mt-0.5">
-                Har mahine ki total installment amount, wasool shuda raqam aur baqi kiston ka mukammal hisaab
+                Current month, pichle 5 months, aur calendar range ke mutabiq har mahine ki installments amount
               </p>
             </div>
           </div>
@@ -213,22 +280,11 @@ export default function MonthlyCapitalBreakdownModal({ onClose, onSelectSale, to
 
         {/* Top Summary Cards */}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 shrink-0">
-          <div className="bg-slate-950 border border-slate-800 rounded-2xl p-3.5 space-y-1">
-            <span className="text-[11px] text-slate-400 font-medium block">
-              Total Installments Capital (All Months)
-            </span>
-            <p className="text-lg sm:text-xl font-black text-white font-mono">
-              Rs. {grandTotals.totalInstallmentAmount.toLocaleString()}
-            </p>
-            <span className="text-[10px] text-blue-400 font-semibold block">
-              Sirf Installments (Advance Shamil Nahi)
-            </span>
-          </div>
-
+          {/* Card A: Current Month Installments */}
           <div className="bg-blue-950/30 border border-blue-500/40 rounded-2xl p-3.5 space-y-1">
             <div className="flex items-center justify-between">
               <span className="text-[11px] text-blue-300 font-bold">
-                Current Month ({currentMonthKey}) Target
+                Current Month ({currentMonthKey}) Installments
               </span>
               <span className="text-[10px] bg-blue-500/20 text-blue-300 px-2 py-0.5 rounded-full font-bold">
                 {currentMonthStats?.accountsCount || 0} Kists
@@ -242,77 +298,123 @@ export default function MonthlyCapitalBreakdownModal({ onClose, onSelectSale, to
             </span>
           </div>
 
+          {/* Card B: Selected Range Installments Total */}
+          <div className="bg-slate-950 border border-slate-800 rounded-2xl p-3.5 space-y-1">
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] text-slate-400 font-medium">
+                Selected Months ({filteredMonths.length}) Installment Total
+              </span>
+            </div>
+            <p className="text-lg sm:text-xl font-black text-emerald-400 font-mono">
+              Rs. {rangeTotals.targetAmount.toLocaleString()}
+            </p>
+            <span className="text-[10px] text-slate-400 block">
+              Wasool: <strong className="text-emerald-400">Rs. {rangeTotals.paidAmount.toLocaleString()}</strong> | Baqi: <strong className="text-amber-400">Rs. {rangeTotals.remainingAmount.toLocaleString()}</strong>
+            </span>
+          </div>
+
+          {/* Card C: All-Time Total Installments Capital */}
           <div className="bg-slate-950 border border-slate-800 rounded-2xl p-3.5 space-y-1">
             <span className="text-[11px] text-slate-400 font-medium block">
-              Overall Kist Recovery Status
+              All-Time Total Installment Capital
             </span>
-            <div className="flex items-baseline justify-between gap-2">
-              <div>
-                <span className="text-[10px] text-slate-400 block">Wasool Shuda:</span>
-                <span className="text-sm font-black text-emerald-400 font-mono">
-                  Rs. {grandTotals.totalCollectedInstallments.toLocaleString()}
-                </span>
-              </div>
-              <div className="text-right">
-                <span className="text-[10px] text-slate-400 block">Kul Baqi Kistein:</span>
-                <span className="text-sm font-black text-amber-400 font-mono">
-                  Rs. {grandTotals.totalPendingInstallments.toLocaleString()}
-                </span>
-              </div>
-            </div>
+            <p className="text-lg sm:text-xl font-black text-white font-mono">
+              Rs. {grandTotals.totalInstallmentAmount.toLocaleString()}
+            </p>
+            <span className="text-[10px] text-blue-400 font-semibold block">
+              Sirf Installments (Advance Shamil Nahi)
+            </span>
           </div>
         </div>
 
-        {/* Filter & Search Bar */}
-        <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5 bg-slate-950 p-3 rounded-2xl border border-slate-800 shrink-0">
-          <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0">
-            <button
-              type="button"
-              onClick={() => setSelectedYear('ALL')}
-              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer shrink-0 ${
-                selectedYear === 'ALL'
-                  ? 'bg-blue-600 text-white shadow'
-                  : 'bg-slate-900 text-slate-400 hover:text-white border border-slate-800'
-              }`}
-            >
-              All Years ({monthlyData.length} Months)
-            </button>
-            {yearsList.map((yr) => (
+        {/* CALENDAR RANGE SELECTOR & QUICK PRESETS */}
+        <div className="bg-slate-950 p-3 rounded-2xl border border-slate-800 space-y-2.5 shrink-0">
+          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-2.5">
+            {/* Calendar Month Range Inputs */}
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-xs font-bold text-blue-400 flex items-center gap-1.5">
+                <Calendar className="w-4 h-4" /> Select Month Range:
+              </span>
+              <div className="flex items-center gap-1.5">
+                <input
+                  type="month"
+                  value={fromMonth}
+                  onChange={(e) => {
+                    setRangePreset('CUSTOM');
+                    setFromMonth(e.target.value);
+                  }}
+                  className="bg-slate-900 border border-slate-700 rounded-xl px-2.5 py-1.5 text-xs text-white font-mono focus:outline-none focus:border-blue-500 cursor-pointer"
+                />
+                <span className="text-xs text-slate-400 font-bold">to</span>
+                <input
+                  type="month"
+                  value={toMonth}
+                  onChange={(e) => {
+                    setRangePreset('CUSTOM');
+                    setToMonth(e.target.value);
+                  }}
+                  className="bg-slate-900 border border-slate-700 rounded-xl px-2.5 py-1.5 text-xs text-white font-mono focus:outline-none focus:border-blue-500 cursor-pointer"
+                />
+              </div>
+            </div>
+
+            {/* Quick Range Buttons */}
+            <div className="flex items-center gap-1.5 overflow-x-auto pb-1 lg:pb-0">
               <button
-                key={yr}
                 type="button"
-                onClick={() => setSelectedYear(yr)}
-                className={`px-3 py-1.5 rounded-xl text-xs font-mono font-bold transition cursor-pointer shrink-0 ${
-                  selectedYear === yr
+                onClick={() => handleSelectPreset('LAST_5')}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer shrink-0 ${
+                  rangePreset === 'LAST_5'
                     ? 'bg-blue-600 text-white shadow'
                     : 'bg-slate-900 text-slate-400 hover:text-white border border-slate-800'
                 }`}
               >
-                {yr}
+                Current + Last 5 Months
               </button>
-            ))}
-            {currentMonthStats && (
               <button
                 type="button"
-                onClick={() => {
-                  setSelectedYear('ALL');
-                  setMonthSearch('');
-                  setExpandedMonthKey(currentMonthKey);
-                }}
-                className="px-3 py-1.5 rounded-xl text-xs font-bold bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/30 transition cursor-pointer shrink-0"
+                onClick={() => handleSelectPreset('CURRENT')}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer shrink-0 ${
+                  rangePreset === 'CURRENT'
+                    ? 'bg-blue-600 text-white shadow'
+                    : 'bg-slate-900 text-slate-400 hover:text-white border border-slate-800'
+                }`}
               >
-                ⚡ Current Month ({currentMonthKey})
+                Only {currentMonthKey}
               </button>
-            )}
+              <button
+                type="button"
+                onClick={() => handleSelectPreset('LAST_12')}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer shrink-0 ${
+                  rangePreset === 'LAST_12'
+                    ? 'bg-blue-600 text-white shadow'
+                    : 'bg-slate-900 text-slate-400 hover:text-white border border-slate-800'
+                }`}
+              >
+                Last 12 Months
+              </button>
+              <button
+                type="button"
+                onClick={() => handleSelectPreset('ALL')}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer shrink-0 ${
+                  rangePreset === 'ALL'
+                    ? 'bg-blue-600 text-white shadow'
+                    : 'bg-slate-900 text-slate-400 hover:text-white border border-slate-800'
+                }`}
+              >
+                All Months ({monthlyData.length})
+              </button>
+            </div>
           </div>
 
-          <div className="relative w-full sm:w-64">
+          {/* Search Bar */}
+          <div className="relative w-full">
             <Search className="w-3.5 h-3.5 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
             <input
               type="text"
               value={monthSearch}
               onChange={(e) => setMonthSearch(e.target.value)}
-              placeholder="Search month (e.g. Nov 2026) or customer..."
+              placeholder="Search month (e.g. Nov 2026, Oct 2026) or customer name / ID / bike..."
               className="w-full bg-slate-900 border border-slate-800 rounded-xl pl-8 pr-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-blue-500"
             />
           </div>
@@ -324,12 +426,19 @@ export default function MonthlyCapitalBreakdownModal({ onClose, onSelectSale, to
             <div className="py-16 text-center space-y-3">
               <RefreshCw className="w-8 h-8 text-blue-400 animate-spin mx-auto" />
               <p className="text-xs text-slate-400 font-semibold">
-                Calculating month-wise installment schedule across all accounts...
+                Loading month-wise installment amounts...
               </p>
             </div>
           ) : filteredMonths.length === 0 ? (
-            <div className="py-12 text-center bg-slate-950 rounded-2xl border border-slate-800">
-              <p className="text-sm text-slate-400 font-medium">No matching months found.</p>
+            <div className="py-12 text-center bg-slate-950 rounded-2xl border border-slate-800 space-y-2">
+              <p className="text-sm text-slate-400 font-medium">Is selected calendar range me koi month nahi mila.</p>
+              <button
+                type="button"
+                onClick={() => handleSelectPreset('ALL')}
+                className="px-3.5 py-1.5 rounded-xl text-xs font-bold bg-blue-600 text-white cursor-pointer"
+              >
+                Show All Months
+              </button>
             </div>
           ) : (
             filteredMonths.map((m) => {
@@ -368,7 +477,7 @@ export default function MonthlyCapitalBreakdownModal({ onClose, onSelectSale, to
                   >
                     <div className="flex items-center gap-3">
                       <div
-                        className={`w-11 h-11 rounded-xl flex flex-col items-center justify-center font-mono font-bold text-xs shrink-0 border ${
+                        className={`w-12 h-12 rounded-xl flex flex-col items-center justify-center font-mono font-bold text-xs shrink-0 border ${
                           isCurrent
                             ? 'bg-blue-600 text-white border-blue-400'
                             : 'bg-slate-900 text-slate-200 border-slate-800'
@@ -393,7 +502,7 @@ export default function MonthlyCapitalBreakdownModal({ onClose, onSelectSale, to
                           </span>
                         </div>
 
-                        <div className="flex items-center gap-3 mt-1 text-[11px] text-slate-400">
+                        <div className="flex items-center gap-3 mt-1 text-[11px] text-slate-400 flex-wrap">
                           <span className="text-emerald-400 font-semibold">
                             ✓ {m.clearedCount} Cleared
                           </span>
@@ -405,6 +514,11 @@ export default function MonthlyCapitalBreakdownModal({ onClose, onSelectSale, to
                           <span className="text-rose-400 font-semibold">
                             ● {m.unpaidCount} Unpaid
                           </span>
+                          {m.bookedSalesCapital > 0 && (
+                            <span className="text-purple-400 font-mono text-[10.5px]">
+                              • New Sales Financed: Rs. {m.bookedSalesCapital.toLocaleString()} ({m.bookedSalesCount})
+                            </span>
+                          )}
                         </div>
                       </div>
                     </div>
@@ -413,7 +527,7 @@ export default function MonthlyCapitalBreakdownModal({ onClose, onSelectSale, to
                     <div className="flex items-center justify-between sm:justify-end gap-4 sm:gap-6 border-t sm:border-t-0 border-slate-800/80 pt-2.5 sm:pt-0">
                       <div className="text-left sm:text-right">
                         <span className="text-[10px] text-slate-400 uppercase font-bold block">
-                          Total Installment Amount
+                          Month Installment Amount
                         </span>
                         <span className="text-sm sm:text-base font-black text-blue-400 font-mono">
                           Rs. {m.targetAmount.toLocaleString()}
@@ -584,7 +698,7 @@ export default function MonthlyCapitalBreakdownModal({ onClose, onSelectSale, to
         {/* Footer */}
         <div className="flex justify-between items-center pt-2 border-t border-slate-800 shrink-0 text-xs">
           <span className="text-slate-400">
-            Showing <strong>{filteredMonths.length}</strong> installment months
+            Showing <strong>{filteredMonths.length}</strong> months | Range Total: <strong className="text-emerald-400 font-mono">Rs. {rangeTotals.targetAmount.toLocaleString()}</strong>
           </span>
           <button
             type="button"
